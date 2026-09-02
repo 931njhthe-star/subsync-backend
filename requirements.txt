@@ -1,0 +1,19 @@
+# 3단계 (Extension ↔ FastAPI 연결)
+fastapi
+uvicorn[standard]
+
+# 4단계~ (RDS PostgreSQL, ORM/마이그레이션) — 필요 시 주석 해제
+# sqlalchemy
+# alembic
+# psycopg[binary]
+
+# 6단계~ (인증) — 필요 시 주석 해제
+# passlib[bcrypt]
+# python-jose[cryptography]
+
+# 7단계~ (ElastiCache Redis) — 필요 시 주석 해제
+# redis
+
+# 개발/테스트
+pytest
+httpx

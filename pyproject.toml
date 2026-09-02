@@ -1,0 +1,18 @@
+[project]
+name = "yltk-backend"
+version = "0.1.0"
+description = "FastAPI backend for YouTube Language Teach Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
