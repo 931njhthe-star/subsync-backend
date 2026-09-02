@@ -1,14 +1,14 @@
 [project]
-name = "yltk-backend"
+name = "subsync-backend"
 version = "0.1.0"
-description = "FastAPI backend for YouTube Language Teach Agent"
+description = "FastAPI backend for the SubSync YouTube English learning service"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "httpx",
