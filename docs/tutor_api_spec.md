@@ -4,6 +4,8 @@
 수준에 따라 Tutor 답변 난이도를 조절하는 Video Tutor API를 정의한다.
 
 공통 접속 정보, 인증, 오류, 보안 규칙은 [API 공통 명세서](./api_spec.md)를 따른다.
+기획 요구사항의 AI Tutor 추출본은 [AI Tutor 요구사항 정리](./ai_tutor_requirements.md)를
+참고한다.
 
 ## 1. 요구사항과 API 매핑
 
@@ -11,9 +13,9 @@
 | --- | --- | --- |
 | 현재 영상에 대해 질문 | `POST /api/v1/tutor/ask`의 `video_id`, `timestamp`, `user_message` | `IMPLEMENTED` |
 | 영상 내용을 기반으로 답변 | `recent_subtitles`, `reply`, `context_subtitle_count` | `IMPLEMENTED` |
-| Tutor가 먼저 학습 질문 제안 | `POST /api/v1/tutor/proactive` | `PROPOSED` |
-| Tutor 영어 답변에 Hover/Click 적용 | `reply_tokens`와 사전 조회 API 연동 | `PROPOSED` |
-| Tutor ON/OFF | `GET/PATCH /api/v1/tutor/settings` | `PROPOSED` |
+| Tutor가 먼저 학습 질문 제안 | `POST /api/v1/tutor/proactive` | `IMPLEMENTED`* |
+| Tutor 영어 답변에 Hover/Click 적용 | `reply_tokens`와 사전 조회 API 연동 | 부분 구현 |
+| Tutor ON/OFF | `GET/PATCH /api/v1/tutor/settings` | `IMPLEMENTED`* |
 | 저장 단어·정답률·응답 시간 기반 개인화 | `learner_signals`, `learner_level`, `tutor_difficulty` | 프로토타입 구현 |
 
 `suggested_questions`는 사용자가 질문한 뒤 제공하는 후속 질문이다. Tutor가 먼저 질문을
@@ -27,24 +29,26 @@
 | --- | --- | --- | --- |
 | `IMPLEMENTED` | `POST` | `/api/v1/tutor/ask` | 현재 자막 문맥 기반 질문 답변 |
 
-### 2.2 추가 개발이 필요한 API
+### 2.2 구현된 확장 API
 
 | 상태 | Method | Path | 설명 |
 | --- | --- | --- | --- |
-| `PROPOSED` | `GET` | `/api/v1/tutor/settings` | 현재 사용자의 Tutor 활성화 상태 조회 |
-| `PROPOSED` | `PATCH` | `/api/v1/tutor/settings` | Tutor ON/OFF 변경 |
-| `PROPOSED` | `POST` | `/api/v1/tutor/proactive` | 선제 질문 표시 여부 판단·생성 |
-| `PROPOSED` | `POST` | `/api/v1/tutor/feedback` | Tutor 답변 평가 기록 |
+| `IMPLEMENTED`* | `GET` | `/api/v1/tutor/settings` | 현재 사용자의 Tutor 활성화 상태 조회 |
+| `IMPLEMENTED`* | `PATCH` | `/api/v1/tutor/settings` | Tutor ON/OFF 변경 |
+| `IMPLEMENTED`* | `POST` | `/api/v1/tutor/proactive` | 선제 질문 표시 여부 판단·생성 |
+| `IMPLEMENTED`* | `POST` | `/api/v1/tutor/feedback` | Tutor 답변 평가 기록 |
 
 `IMPLEMENTED`와 `PROPOSED`의 의미는 [API 공통 명세서](./api_spec.md)의 상태 표기를
-따른다. 현재 소스에는 `ask`만 등록되어 있으며, 나머지 API를 호출하면 `404`가 반환된다.
+따른다. `*`가 붙은 API는 현재 라우터에 등록되어 로컬에서 동작하지만, Supabase Auth와
+영구 DB가 연결되기 전까지는 개발용 메모리 저장소를 사용한다.
 
 ## 3. 공통 요청 조건
 
 ### 3.1 현재 구현
 
-현재 `POST /api/v1/tutor/ask`에는 인증 dependency가 연결되어 있지 않다. 로컬 테스트는
-`Content-Type` 헤더만으로 수행할 수 있다.
+현재 `/api/v1/tutor`에 등록된 개발 API에는 인증 dependency가 연결되어 있지 않다.
+로컬 테스트는 `Content-Type` 헤더만으로 수행할 수 있다. 운영 전환 시 아래의
+Bearer Token을 모든 사용자별 Tutor API에 적용한다.
 
 ```http
 Content-Type: application/json
@@ -98,6 +102,7 @@ Authorization: Bearer <supabase_access_token>
 | `learner_signals` | object | 아니오 | 기본 `{}` | 학습자 수준 추론용 입력 |
 | `conversation_history` | array | 아니오 | 최대 10개, 기본 `[]` | 최근 Tutor 대화 이력 |
 | `focus_word` | string/null | 아니오 | 최대 100자, 기본 `null` | 집중해서 설명할 표현 |
+| `conversation_id` | string/null | 아니오 | 최대 100자, 기본 `null` | 이어갈 Tutor 대화 식별자 |
 
 #### `recent_subtitles` 원소
 
@@ -216,6 +221,7 @@ Authorization: Bearer <supabase_access_token>
 | `tutor_difficulty` | string | 선택된 Tutor 난이도 |
 | `profile_confidence` | number | 수준 추론 신뢰도, 0~1 |
 | `context_subtitle_count` | integer | 답변에 사용한 주변 자막 줄 수 |
+| `reply_tokens` | array | 답변에서 Hover/Click 가능한 영어 표현 목록 |
 
 #### `usage` 원소
 
@@ -250,7 +256,16 @@ tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 
   "learner_level": "A2",
   "tutor_difficulty": "guided",
   "profile_confidence": 0.31,
-  "context_subtitle_count": 2
+  "context_subtitle_count": 2,
+  "reply_tokens": [
+    {
+      "surface": "honest",
+      "normalized": "honest",
+      "start": 4,
+      "end": 10,
+      "interactive": true
+    }
+  ]
 }
 ```
 
@@ -272,7 +287,7 @@ tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 
 }
 ```
 
-## 5. Tutor ON/OFF — `PROPOSED`
+## 5. Tutor ON/OFF — `IMPLEMENTED*`
 
 Tutor OFF 상태에서는 Tutor가 자동으로 표시하는 선제 질문을 절대 생성하거나 표시하지
 않는다. 설정은 사용자별로 저장한다.
@@ -286,6 +301,9 @@ Tutor OFF 상태에서는 Tutor가 자동으로 표시하는 선제 질문을 �
 ```http
 Authorization: Bearer <supabase_access_token>
 ```
+
+현재 로컬 구현에서는 인증 헤더를 검사하지 않는다. Supabase Auth 연동 후 사용자별
+설정을 보호하기 위해 필수 헤더로 변경한다.
 
 #### 응답 `200 OK`
 
@@ -325,7 +343,7 @@ Authorization: Bearer <supabase_access_token>
 설정 변경 시 서버는 사용자의 다른 계정 설정을 덮어쓰지 않아야 한다. 사용자 식별자는
 요청 본문이 아니라 검증된 Access Token에서 가져온다.
 
-## 6. Tutor 선제 질문 — `PROPOSED`
+## 6. Tutor 선제 질문 — `IMPLEMENTED*`
 
 ### `POST /api/v1/tutor/proactive`
 
@@ -342,6 +360,9 @@ Content-Type: application/json
 Accept: application/json
 Authorization: Bearer <supabase_access_token>
 ```
+
+현재 로컬 구현에서는 인증 헤더를 검사하지 않으며, 운영 전환 후 사용자별 선제 질문
+이력과 설정을 보호하기 위해 필수로 적용한다.
 
 ### 6.2 요청 본문
 
@@ -428,10 +449,10 @@ Authorization: Bearer <supabase_access_token>
 - 문맥이 부족하면 LLM을 호출하지 않고 `insufficient_context`를 반환할 수 있다.
 - cooldown과 표시 이력은 Redis 또는 사용자별 저장소에 기록한다.
 
-## 7. Tutor 답변 Hover/Click — `PROPOSED`
+## 7. Tutor 답변 Hover/Click — `IMPLEMENTED*`
 
-현재 `reply`는 단순 문자열이므로 프론트엔드가 영어 학습 대상 단어를 안정적으로 식별할
-수 있도록 `reply_tokens`를 응답에 추가하는 것을 제안한다.
+현재 `reply`와 함께 `reply_tokens`를 반환해 프론트엔드가 영어 학습 대상 단어를
+안정적으로 식별할 수 있다. 사전 조회와 단어 저장은 별도 도메인 API의 구현이 필요하다.
 
 ### 7.1 `reply_tokens` 형식
 
@@ -473,7 +494,7 @@ Hover/Click 기능을 완성하려면 다음 별도 도메인 API와 연동한�
 | Click | `GET /api/v1/dict/detail` | 상세 뜻·예문·관련 표현 표시 |
 | 저장 | `POST /api/v1/words/save` | 사용자가 선택한 단어를 단어장에 저장 |
 
-## 8. Tutor 답변 피드백 — `PROPOSED`
+## 8. Tutor 답변 피드백 — `IMPLEMENTED*`
 
 ### `POST /api/v1/tutor/feedback`
 
@@ -487,6 +508,9 @@ Content-Type: application/json
 Accept: application/json
 Authorization: Bearer <supabase_access_token>
 ```
+
+현재 로컬 구현에서는 인증 헤더를 검사하지 않는다. 운영 전환 후 피드백의 사용자
+소유권을 검증한다.
 
 ### 요청 본문
 
@@ -513,11 +537,17 @@ Authorization: Bearer <supabase_access_token>
 ```json
 {
   "feedback_id": "fb_01HZX8",
+  "conversation_id": "conv_49a1d",
   "message_id": "msg_001",
   "rating": "helpful",
+  "reason": null,
+  "comment": "자막 문맥에 맞는 설명이라 이해하기 쉬웠어요.",
   "created_at": "2026-09-03T12:10:00Z"
 }
 ```
+
+피드백은 동일한 `message_id`에 대해 최신 평가로 갱신한다. 현재는 개발용 메모리에
+저장하며, 존재하지 않거나 다른 대화에 속한 메시지를 평가하면 `404`를 반환한다.
 
 ## 9. 프론트엔드 연동 순서
 
@@ -547,11 +577,12 @@ Authorization: Bearer <supabase_access_token>
 | 개인화 | 요청의 `learner_signals` 사용 | 사용자별 DB 조회 |
 | 수준 판정 | 규칙 기반 A1~C1 추론 | 학습 기록과 피드백을 이용해 지속 개선 |
 | LLM provider | Gemini/Groq failover + stub fallback | 사용량 저장소·운영 모니터링 고도화 |
-| 선제 질문 | 미구현 | `proactive` + cooldown |
-| Tutor ON/OFF | 미구현 | 사용자별 설정 저장 및 호출 차단 |
-| Hover/Click | plain text 응답 | `reply_tokens` + 사전 API |
-| 대화 저장 | 임시 conversation/message ID | Supabase 사용자별 저장 |
-| 답변 피드백 | 미구현 | `feedback` API 및 분석 |
+| 선제 질문 | 규칙 기반 + 메모리 cooldown | `proactive` + Redis cooldown |
+| Tutor ON/OFF | anonymous actor 메모리 설정 | 사용자별 설정 저장 및 호출 차단 |
+| Hover/Click | `reply_tokens` 반환 | 사전 API·단어장 API 연결 |
+| 대화 저장 | 최근 10턴 메모리 | Supabase 사용자별 저장 |
+| 답변 피드백 | 메모리 저장 | Supabase 저장 및 분석 |
 
-`PROPOSED` 계약을 구현한 뒤 실제 Pydantic 스키마·상태 코드·인증 동작을 검증하고
-상태를 `IMPLEMENTED`로 변경한다.
+현재 `IMPLEMENTED*` 항목은 실제 라우터에 등록되어 로컬 검증이 가능하다. 운영 전환 시
+Supabase Auth·DB·Redis를 연결하고 사용자별 소유권과 영구 저장을 검증한 뒤 별표를
+제거한다.

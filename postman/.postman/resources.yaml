@@ -8,6 +8,8 @@ localResources:
   environments:
     - ../SubSync-Local.postman_environment.json
 
+# Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
+
 cloudResources:
   collections:
-    ../postman/collections/SubSync Backend API: 20e44a5e-93a3-4bb0-90b5-7836f08270b7
+    ../postman/collections/SubSync Backend API: ab07dad5-6139-41cb-b47c-fb0361e8e2fd

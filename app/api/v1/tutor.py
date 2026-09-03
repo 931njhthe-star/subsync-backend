@@ -9,19 +9,36 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.ai.context_builder import ConversationTurn, SubtitleLine
 from app.ai.learner_profile import LearnerSignals
 from app.ai.llm_client import GeminiClient, GroqClient, RuleBasedTutorClient
 from app.ai.provider_router import ProviderQuota, ProviderRouter
+from app.ai.reply_tokenizer import extract_reply_tokens
+from app.ai.tutor_state import InMemoryTutorState
 from app.ai.tutor_service import TutorAskCommand, TutorService
 from app.ai.usage_tracker import InMemoryUsageTracker
 from app.core.config import settings
-from app.schemas.tutor import TutorAskRequest, TutorAskResponse, TutorUsageResponse
+from app.schemas.tutor import (
+    ProactiveTutorRequest,
+    ProactiveTutorResponse,
+    ReplyTokenResponse,
+    TutorAskRequest,
+    TutorAskResponse,
+    TutorFeedbackRequest,
+    TutorFeedbackResponse,
+    TutorSettingsResponse,
+    TutorSettingsUpdateRequest,
+    TutorUsageResponse,
+)
 
 
 router = APIRouter(prefix="/tutor", tags=["Video Tutor"])
+
+# Supabase Auth dependency가 연결되기 전까지 로컬에서 사용할 개발용 actor다.
+# 운영 환경에서는 이 값을 사용하지 않고 검증된 JWT의 sub로 교체해야 한다.
+_DEVELOPMENT_ACTOR_ID = "anonymous"
 
 
 @lru_cache(maxsize=1)
@@ -34,6 +51,20 @@ def get_usage_tracker() -> InMemoryUsageTracker:
     """
 
     return InMemoryUsageTracker()
+
+
+@lru_cache(maxsize=1)
+def get_tutor_state() -> InMemoryTutorState:
+    """프로세스에서 공유할 개발용 Tutor 상태 저장소를 생성한다.
+
+    대화·설정·선제 질문 이력·피드백을 요청 사이에 유지하려면 매 요청마다 새
+    저장소를 만들면 안 된다. 실제 사용자별 영구 저장소가 연결되면 이 dependency를
+    Supabase/Redis repository로 교체한다.
+    """
+
+    return InMemoryTutorState(
+        proactive_cooldown_seconds=settings.tutor_proactive_cooldown_seconds,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -89,6 +120,7 @@ def get_tutor_service() -> TutorService:
 async def ask_tutor(
     request: TutorAskRequest,
     service: TutorService = Depends(get_tutor_service),
+    state: InMemoryTutorState = Depends(get_tutor_state),
 ) -> TutorAskResponse:
     """영상 시점의 자막 문맥을 바탕으로 Tutor 답변을 생성한다.
 
@@ -105,7 +137,30 @@ async def ask_tutor(
         서버가 학습 신호를 조회해야 한다.
     """
 
+    if not state.get_settings(_DEVELOPMENT_ACTOR_ID).tutor_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="Tutor가 비활성화되어 있습니다.",
+        )
+
     signals = request.learner_signals
+    stored_history = None
+    if request.conversation_id:
+        stored_history = state.get_conversation_history(
+            _DEVELOPMENT_ACTOR_ID,
+            request.conversation_id,
+        )
+    # 저장된 대화가 있으면 서버 이력을 우선한다. 아직 저장된 대화가 없는 최초
+    # 요청만 클라이언트가 보낸 history를 사용해 대화를 초기화한다.
+    conversation_history = (
+        stored_history
+        if stored_history is not None
+        else tuple(
+            ConversationTurn(role=turn.role, message=turn.message)
+            for turn in request.conversation_history
+        )
+    )
+
     # 저장 단어 배열과 별도로 전달된 count 중 큰 값을 사용해 부분 데이터도 보정한다.
     saved_words = tuple(item.word for item in signals.saved_words)
     saved_word_count = max(signals.saved_word_count or 0, len(saved_words))
@@ -129,12 +184,20 @@ async def ask_tutor(
                 recent_response_time_ms=signals.recent_response_time_ms,
                 saved_words=saved_words,
             ),
-            conversation_history=tuple(
-                ConversationTurn(role=turn.role, message=turn.message)
-                for turn in request.conversation_history
-            ),
+            conversation_history=conversation_history,
             focus_word=request.focus_word,
+            conversation_id=request.conversation_id,
         )
+    )
+
+    state.record_exchange(
+        actor_id=_DEVELOPMENT_ACTOR_ID,
+        conversation_id=result.conversation_id,
+        message_id=result.message_id,
+        video_id=request.video_id,
+        user_message=request.user_message,
+        tutor_reply=result.answer.reply,
+        initial_history=conversation_history if stored_history is None else (),
     )
 
     return TutorAskResponse(
@@ -153,4 +216,125 @@ async def ask_tutor(
         tutor_difficulty=result.profile.tutor_difficulty.value,
         profile_confidence=result.profile.confidence,
         context_subtitle_count=len(result.context.nearby_subtitles),
+        reply_tokens=[
+            ReplyTokenResponse(
+                surface=token.surface,
+                normalized=token.normalized,
+                start=token.start,
+                end=token.end,
+                interactive=token.interactive,
+            )
+            for token in extract_reply_tokens(result.answer.reply)
+        ],
+    )
+
+
+@router.get("/settings", response_model=TutorSettingsResponse)
+def get_tutor_settings(
+    state: InMemoryTutorState = Depends(get_tutor_state),
+) -> TutorSettingsResponse:
+    """개발용 actor의 Tutor ON/OFF 설정을 조회한다.
+
+    현재는 Supabase Auth가 연결되지 않아 모든 로컬 요청이 anonymous actor로
+    처리된다. 운영 전환 시 인증 dependency에서 사용자 ID를 주입해야 한다.
+    """
+
+    current = state.get_settings(_DEVELOPMENT_ACTOR_ID)
+    return TutorSettingsResponse(
+        tutor_enabled=current.tutor_enabled,
+        updated_at=current.updated_at,
+    )
+
+
+@router.patch("/settings", response_model=TutorSettingsResponse)
+def update_tutor_settings(
+    request: TutorSettingsUpdateRequest,
+    state: InMemoryTutorState = Depends(get_tutor_state),
+) -> TutorSettingsResponse:
+    """개발용 actor의 Tutor ON/OFF 설정을 변경한다."""
+
+    updated = state.set_tutor_enabled(
+        _DEVELOPMENT_ACTOR_ID,
+        request.tutor_enabled,
+    )
+    return TutorSettingsResponse(
+        tutor_enabled=updated.tutor_enabled,
+        updated_at=updated.updated_at,
+    )
+
+
+@router.post("/proactive", response_model=ProactiveTutorResponse)
+def proactive_tutor_question(
+    request: ProactiveTutorRequest,
+    state: InMemoryTutorState = Depends(get_tutor_state),
+) -> ProactiveTutorResponse:
+    """현재 자막에 기반해 Tutor 선제 질문을 표시할지 판단한다.
+
+    초기 버전은 자막에서 학습 단어를 규칙으로 선택하므로 선제 질문을 위해 LLM을
+    호출하지 않는다. cooldown과 이미 표시한 표현은 개발용 상태 저장소에서 관리한다.
+    """
+
+    decision = state.decide_proactive(
+        actor_id=_DEVELOPMENT_ACTOR_ID,
+        video_id=request.video_id,
+        timestamp=request.timestamp,
+        subtitles=tuple(
+            SubtitleLine(
+                timestamp=line.time,
+                english=line.en,
+                korean=line.ko,
+            )
+            for line in request.recent_subtitles
+        ),
+        playback_state=request.playback_state,
+        last_question_id=request.last_question_id,
+        last_question_at=request.last_question_at,
+    )
+    return ProactiveTutorResponse(
+        should_show=decision.should_show,
+        reason=decision.reason,
+        question_id=decision.question_id,
+        question=decision.question,
+        focus_word=decision.focus_word,
+        expires_in_seconds=decision.expires_in_seconds,
+    )
+
+
+@router.post(
+    "/feedback",
+    response_model=TutorFeedbackResponse,
+    status_code=201,
+)
+def create_tutor_feedback(
+    request: TutorFeedbackRequest,
+    state: InMemoryTutorState = Depends(get_tutor_state),
+) -> TutorFeedbackResponse:
+    """Tutor 답변 평가를 개발용 메모리 저장소에 기록한다."""
+
+    if not state.has_message(
+        _DEVELOPMENT_ACTOR_ID,
+        request.message_id,
+        request.conversation_id,
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="평가할 Tutor 메시지를 찾을 수 없습니다.",
+        )
+
+    record = state.record_feedback(
+        actor_id=_DEVELOPMENT_ACTOR_ID,
+        conversation_id=request.conversation_id,
+        message_id=request.message_id,
+        rating=request.rating,
+        reason=request.reason,
+        comment=request.comment,
+    )
+    return TutorFeedbackResponse(
+        feedback_id=record.feedback_id,
+        conversation_id=record.conversation_id,
+        message_id=record.message_id,
+        rating=record.rating,
+        reason=record.reason,
+        comment=record.comment,
+        created_at=record.created_at,
     )

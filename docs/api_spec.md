@@ -6,6 +6,7 @@
 도메인별 API 명세서는 별도 문서로 관리한다.
 
 - [Video Tutor API 명세서](./tutor_api_spec.md)
+- [AI Tutor 요구사항 정리](./ai_tutor_requirements.md)
 
 실제 구현 여부는 각 도메인 문서의 상태 표기와 현재 FastAPI 소스 코드를 기준으로
 판단한다.

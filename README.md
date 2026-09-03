@@ -47,7 +47,9 @@ subsync-backend/
 │   ├── components/
 │   └── app.py
 ├── docs/
-│   ├── api_spec.md          # 프론트엔드-백엔드 API 계약
+│   ├── api_spec.md          # API 공통 규칙
+│   ├── tutor_api_spec.md    # Video Tutor API 계약
+│   ├── ai_tutor_requirements.md # AI Tutor 요구사항 추출본
 │   ├── architecture.md      # 시스템 아키텍처
 │   ├── db_schema.sql        # Supabase PostgreSQL 스키마
 │   └── subsync-architecture-guide.md
@@ -139,6 +141,7 @@ GROQ_MODEL=openai/gpt-oss-20b
 GROQ_TIMEOUT_SECONDS=20
 GROQ_DAILY_TOKEN_LIMIT=180000
 GROQ_MINUTE_TOKEN_LIMIT=7000
+TUTOR_PROACTIVE_COOLDOWN_SECONDS=45
 JWT_SECRET_KEY=
 ```
 
@@ -162,6 +165,8 @@ fallback 규칙은
 
 - [시스템 아키텍처](docs/architecture.md)
 - [API 명세](docs/api_spec.md)
+- [Video Tutor API 명세](docs/tutor_api_spec.md)
+- [AI Tutor 요구사항](docs/ai_tutor_requirements.md)
 - [Supabase DB 스키마](docs/db_schema.sql)
 - [레포지토리·폴더 구조 설계](docs/subsync-architecture-guide.md)
 
