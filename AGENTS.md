@@ -24,10 +24,10 @@
 
 | 변경 영역 | 반드시 먼저 확인할 문서 |
 | --- | --- |
-| 모든 API 공통 규칙·인증·오류 | `docs/api_spec.md` |
-| Video Tutor API | `docs/tutor_api_spec.md`, `docs/ai-tutor.md` |
-| DB 테이블·인덱스 | `docs/db_schema.sql` |
-| 시스템/폴더 구조 | `docs/architecture.md`, `docs/subsync-architecture-guide.md` |
+| 모든 API 공통 규칙·인증·오류 | `docs/api/api_spec.md` |
+| Video Tutor API | `docs/api/tutor_api_spec.md`, `docs/ai/ai-tutor.md` |
+| DB 테이블·인덱스 | `docs/database/db_schema.sql` |
+| 시스템/폴더 구조 | `docs/architecture/architecture.md`, `docs/architecture/subsync-architecture-guide.md` |
 | Postman 사용 방법 | `postman/README.md` |
 
 문서의 `IMPLEMENTED`, `PROPOSED`, `DEPENDENCY` 상태 표기를 실제 라우터 및 테스트와
@@ -48,7 +48,11 @@ app/
 
 tests/            pytest 단위·API 통합 테스트
 docs/             팀이 합의한 계약 및 설계 문서
-docs/migrations/  적용 순서가 보존되는 DB 변경 SQL (DB 변경 시 생성)
+├── architecture/ 시스템 구조·레포지토리 설계
+├── api/          공통 API·도메인 API 계약
+├── ai/           AI Tutor 요구사항·설계
+├── database/     Supabase 스키마·DB 문서
+└── migrations/  적용 순서가 보존되는 DB 변경 SQL (DB 변경 시 생성)
 postman/          공유 가능한 Collection·Environment JSON
 dashboard/        Streamlit 운영·분석 화면
 ```
@@ -148,14 +152,14 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
   정의한 오류 형식만 노출한다.
 - 로그 레벨 기준: 정상 요청은 INFO, 재시도된 provider 실패나 캐시 miss처럼 예상된
   이상 상황은 WARNING, 처리 불가능한 예외는 ERROR로 구분한다.
-- 새 로그 필드를 추가하거나 형식을 바꾸면 관련 문서(`docs/architecture.md` 등)에
+- 새 로그 필드를 추가하거나 형식을 바꾸면 관련 문서(`docs/architecture/architecture.md` 등)에
   반영해 다른 담당자가 같은 방식으로 파싱할 수 있게 한다.
 
 ### AI·외부 서비스
 
 - 자막, 사용자 질문, 외부 API 응답은 신뢰할 수 없는 입력으로 취급한다.
 - provider/model, timeout, quota, fallback 동작을 바꾸면 관련 환경변수와
-  `docs/ai-tutor.md`를 갱신한다.
+  `docs/ai/ai-tutor.md`를 갱신한다.
 - 실 API를 기본 테스트에 의존시키지 않는다. 기본 테스트는 stub/fake client로
   재현 가능해야 한다.
 - provider 응답 원문, Access Token, 개인 식별 가능 정보는 로그에 남기지 않는다.
@@ -166,7 +170,7 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
   provider 호출 구조와 프롬프트 템플릿에서 강제한다.
 - **대화 이력 관리**: `conversation_history`는 provider별 컨텍스트 한도를 넘지
   않도록 최근 N턴 또는 토큰 예산 기준으로 자르는 규칙을 두고, 자르는 기준(턴 수 또는
-  토큰 수)을 `docs/ai-tutor.md`에 명시한다.
+  토큰 수)을 `docs/ai/ai-tutor.md`에 명시한다.
 - **사용량·비용 제어**: 사용자당/세션당 Tutor 호출 빈도 제한(rate limit)과 요청당
   최대 토큰 한도를 두고, 초과 시 반환할 오류 형식을 API 명세에 정의한다. `usage`
   필드는 기록용이며 제한 로직을 대체하지 않는다.
@@ -179,7 +183,7 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
 1. `app/schemas/`에 요청·응답 DTO와 검증 규칙을 작성한다.
 2. `app/api/v1/`에 라우터를 구현하고 `app/main.py`에 등록한다.
 3. 도메인 로직은 `services/` 또는 `ai/`로 분리한다.
-4. `docs/api_spec.md`와 해당 도메인 명세(예: `docs/tutor_api_spec.md`)에 경로, 인증,
+4. `docs/api/api_spec.md`와 해당 도메인 명세(예: `docs/api/tutor_api_spec.md`)에 경로, 인증,
    요청, 성공/실패 응답 예시, 구현 상태를 갱신한다.
 5. `postman/SubSync-API.postman_collection.json`에 요청을 추가하거나 수정한다.
    - `{{base_url}}`, `{{access_token}}` 등 환경 변수를 사용한다.
@@ -207,7 +211,7 @@ API만 추가하고 명세, Postman Collection, 테스트 중 하나를 생략�
    `-- ROLLBACK:` 주석 아래 역방향 `DROP/ALTER`)을 함께 남긴다. 데이터 삭제·컬럼
    삭제처럼 되돌릴 수 없는 변경은 되돌리기가 불가능함을 파일 상단 주석과 PR 설명에
    명시하고, 필요하면 되돌리기 대신 백업/백필 절차를 적는다.
-4. 현재 전체 스키마의 기준 문서인 `docs/db_schema.sql`도 최종 상태로 갱신한다.
+4. 현재 전체 스키마의 기준 문서인 `docs/database/db_schema.sql`도 최종 상태로 갱신한다.
 5. 데이터 이동·backfill·되돌리기 어려운 변경은 migration 상단 주석에 영향과 실행
    순서를 적고, PR 설명에도 명시한다.
 6. DB 모델/repository, Pydantic 스키마, API 명세, 테스트를 함께 갱신한다.
@@ -260,7 +264,7 @@ uv run uvicorn app.main:app --reload --port 8000
 - 커밋 전 `git status`, `git diff`로 의도하지 않은 파일·비밀값·빌드 산출물이 없는지
   확인한다.
 - 커밋 메시지는 명령형으로 간결하게 작성한다. 예: `feat: add tutor feedback endpoint`
-- 공유 파일(`app/main.py`, `app/core/config.py`, `docs/api_spec.md`, `docs/db_schema.sql`,
+- 공유 파일(`app/main.py`, `app/core/config.py`, `docs/api/api_spec.md`, `docs/database/db_schema.sql`,
   `pyproject.toml`, Postman Collection)은 충돌 가능성이 높으므로 수정 범위를 작게 하고
   변경 이유를 PR에 남긴다.
 - 공유 파일을 수정하는 PR은 해당 파일의 원 담당자(또는 영향받는 담당자) 리뷰를
