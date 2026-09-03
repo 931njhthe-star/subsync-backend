@@ -4,8 +4,8 @@
 정리한 문서다. 원문에 포함된 YouTube 연동, 이중자막, 사전, 단어장, 인증,
 학습 기록 요구사항 중 Tutor 동작에 필요한 부분만 연결 관계로 남겼다.
 
-API의 요청·응답 계약은 [Tutor API 명세서](./tutor_api_spec.md), 인증·오류·보안과
-같은 공통 규칙은 [API 공통 명세서](./api_spec.md)를 따른다.
+API의 요청·응답 계약은 [Tutor API 명세서](../api/tutor_api_spec.md), 인증·오류·보안과
+같은 공통 규칙은 [API 공통 명세서](../api/api_spec.md)를 따른다.
 
 ## 1. 기능 범위
 
