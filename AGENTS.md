@@ -28,6 +28,7 @@
 | Video Tutor API | `docs/api/tutor_api_spec.md`, `docs/ai/ai-tutor.md` |
 | DB 테이블·인덱스 | `docs/database/db_schema.sql` |
 | 시스템/폴더 구조 | `docs/architecture/architecture.md`, `docs/architecture/subsync-architecture-guide.md` |
+| 초보자 온보딩·AI 작업 요청 | `docs/onboarding.md`, `docs/prompts/feature-task.md` |
 | Postman 사용 방법 | `postman/README.md` |
 
 문서의 `IMPLEMENTED`, `PROPOSED`, `DEPENDENCY` 상태 표기를 실제 라우터 및 테스트와
@@ -53,6 +54,8 @@ docs/             팀이 합의한 계약 및 설계 문서
 ├── ai/           AI Tutor 요구사항·설계
 ├── database/     Supabase 스키마·DB 문서
 └── migrations/  적용 순서가 보존되는 DB 변경 SQL (DB 변경 시 생성)
+docs/onboarding.md 온보딩 및 로컬 실행 절차
+docs/prompts/     AI 코딩 작업 프롬프트 템플릿
 postman/          공유 가능한 Collection·Environment JSON
 dashboard/        Streamlit 운영·분석 화면
 ```
@@ -231,8 +234,8 @@ Supabase Auth 연동 테이블은 `auth.users(id)`를 참조하고, RLS에서
 - 패키지 추가/제거/업데이트는 `uv add <package>` 또는 `uv add --dev <package>`로 한다.
   `pip install`로만 설치하거나 `requirements.txt`를 새로 만들지 않는다.
 - `pyproject.toml`이 바뀌면 생성된 `uv.lock`도 반드시 함께 커밋한다.
-- 새 환경변수는 `app/core/config.py`, `README.md`의 환경변수 목록, 사용 문서에 함께
-  추가한다. 실제 비밀값은 `.env`에만 두며 커밋하지 않는다.
+- 새 환경변수는 `app/core/config.py`, `.env.example`, `README.md`의 환경변수 목록,
+  사용 문서에 함께 추가한다. 실제 비밀값은 `.env`에만 두며 커밋하지 않는다.
 - `.env.example`을 도입하면 키 이름만 담고 실제 값은 절대 넣지 않는다.
 
 ## 8. 테스트와 검증

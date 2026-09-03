@@ -1,0 +1,30 @@
+{
+  "video_id": "arj7oStGLkU",
+  "timestamp": 156.4,
+  "user_message": "be honest with는 언제 쓰나요?",
+  "recent_subtitles": [
+    {
+      "time": 150.0,
+      "en": "I know it sounds crazy.",
+      "ko": "말도 안 되게 들리겠지만요."
+    },
+    {
+      "time": 156.4,
+      "en": "I want to be honest with you.",
+      "ko": "솔직하게 말씀드리고 싶어요."
+    }
+  ],
+  "learner_signals": {
+    "saved_words": [
+      {
+        "word": "honest"
+      }
+    ],
+    "saved_word_count": 14,
+    "quiz_accuracy": 0.72,
+    "average_response_time_ms": 7500,
+    "quiz_attempts": 6
+  },
+  "conversation_history": [],
+  "focus_word": "honest"
+}

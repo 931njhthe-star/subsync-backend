@@ -47,13 +47,20 @@ subsync-backend/
 │   ├── components/
 │   └── app.py
 ├── docs/
+│   ├── onboarding.md       # 처음 참여하는 팀원의 실행·작업 안내
+│   ├── prompts/            # AI 작업 요청 템플릿
 │   ├── architecture/       # 시스템 구조·레포지토리 설계
 │   ├── api/                # 공통 API·도메인 API 계약
 │   ├── ai/                 # AI Tutor 요구사항·설계
 │   ├── database/           # Supabase 스키마·DB 문서
 │   └── README.md           # 문서 분류 및 읽는 순서
 ├── tests/
-│   └── test_health.py       # 헬스체크 테스트
+│   ├── fixtures/             # 담당자 간 공유 테스트 데이터
+│   ├── test_health.py        # 헬스체크 테스트
+│   └── test_tutor.py         # Tutor 테스트
+├── .github/
+│   ├── pull_request_template.md
+│   └── workflows/ci.yml      # PR 자동 테스트
 ├── .python-version          # uv가 사용할 Python 버전
 ├── pyproject.toml           # uv 프로젝트·의존성 설정
 └── uv.lock                  # uv가 생성·관리하는 고정 의존성 잠금 파일
@@ -163,6 +170,8 @@ fallback 규칙은
 ## 문서
 
 - [문서 인덱스](docs/README.md)
+- [온보딩 안내](docs/onboarding.md)
+- [AI 작업 프롬프트](docs/prompts/feature-task.md)
 - [시스템 아키텍처](docs/architecture/architecture.md)
 - [API 명세](docs/api/api_spec.md)
 - [Video Tutor API 명세](docs/api/tutor_api_spec.md)

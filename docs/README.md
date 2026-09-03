@@ -7,6 +7,9 @@
 
 ```text
 docs/
+├── onboarding.md                         # 처음 참여하는 팀원의 실행·작업 안내
+├── prompts/
+│   └── feature-task.md                   # AI 기능 작업 요청 템플릿
 ├── architecture/
 │   ├── architecture.md                 # 시스템 구성과 데이터 흐름
 │   └── subsync-architecture-guide.md   # 레포지토리·폴더·역할·협업 설계
@@ -25,9 +28,11 @@ docs/
 
 1. [시스템 아키텍처](architecture/architecture.md)로 전체 흐름을 파악한다.
 2. [레포지토리·역할 설계](architecture/subsync-architecture-guide.md)로 담당 범위를 확인한다.
-3. 작업 분야에 따라 [API 공통 규칙](api/api_spec.md), [DB 스키마](database/db_schema.sql),
+3. 처음 참여한 팀원은 [온보딩 안내](onboarding.md)와 [AI 작업 프롬프트](prompts/feature-task.md)를
+   먼저 확인한다.
+4. 작업 분야에 따라 [API 공통 규칙](api/api_spec.md), [DB 스키마](database/db_schema.sql),
    [AI Tutor 요구사항](ai/ai_tutor_requirements.md)을 읽는다.
-4. 구현할 API는 [Tutor API 계약](api/tutor_api_spec.md) 등 도메인 명세를 기준으로 한다.
+5. 구현할 API는 [Tutor API 계약](api/tutor_api_spec.md) 등 도메인 명세를 기준으로 한다.
 
 ## 분야별 변경 규칙
 
