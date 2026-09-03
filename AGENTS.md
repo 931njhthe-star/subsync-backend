@@ -52,11 +52,68 @@ dashboard/        Streamlit 운영·분석 화면
 라우터에 DB/LLM 세부 로직을 넣지 않는다. 요청/응답 스키마는 `schemas/`에 두고,
 외부 서비스 호출은 `ai/`, `db/`, `cache/` 또는 해당 service를 통해 수행한다.
 
-## 3. 공통 구현 규칙
+## 3. 팀 담당 영역과 인수인계 계약
+
+세 명의 기본 담당은 다음과 같다. 담당 영역의 코드를 우선 책임지되, 공통 계약을
+바꾸거나 다른 담당 영역에 영향을 주는 변경은 구현 전에 해당 담당자와 공유한다.
+
+| 담당자 | 주 담당 영역 | 기본 작업 폴더 | 책임 산출물 |
+| --- | --- | --- | --- |
+| **소예** | 사용자/DB 중심: Auth, User, Word Save, History, Feedback, Supabase | `app/core/`, `app/db/`, `app/models/`, `app/services/` 중 사용자·저장 영역 | Supabase Auth/JWT dependency, DB migration·RLS, 사용자 데이터 repository, 저장·조회 API |
+| **서윤** | 콘텐츠/API 중심: Video, Subtitle, Script, Dictionary, Hover, Redis | `app/api/v1/`, `app/schemas/`, `app/services/` 중 콘텐츠·사전 영역, `app/cache/` | 콘텐츠/사전 API, 표준 자막 DTO, Redis cache 정책 및 fallback |
+| **경락** | LLM + AI Tutor | `app/ai/`, `app/api/v1/tutor.py`, `app/schemas/tutor.py` | Tutor 문맥·프롬프트·provider/fallback, 대화 응답 계약, AI 사용량·품질 처리 |
+
+### 담당 영역별 작업 규칙
+
+- 소예는 사용자 비밀번호를 별도 저장하지 않고 Supabase `auth.users`를 기준으로
+  사용자와 앱 데이터를 연결한다. 사용자 데이터의 소유권, RLS, migration SQL을 함께
+  검토한다.
+- 서윤은 자막과 콘텐츠의 원천 형식을 하나의 Pydantic DTO로 고정한다. Redis를 사용할
+  때 cache key, TTL, miss 시 동작을 문서와 테스트에 남긴다.
+- 경락은 외부 LLM을 기본 테스트에 직접 연결하지 않는다. `stub/fake` provider로
+  Tutor 요청·응답·fallback을 재현할 수 있게 만들고, provider별 설정은 환경변수로
+  분리한다.
+- `app/main.py`, `app/core/config.py`, 공통 `app/schemas/`, `docs/`의 계약 문서,
+  `pyproject.toml`, Postman 파일은 공유 영역이다. 담당자 단독으로 호환성을 깨는
+  변경을 하지 않는다.
+
+### 세 담당자 사이의 공통 데이터 계약
+
+다음 값의 이름과 의미를 임의로 바꾸지 않는다. 변경이 필요하면 API 명세와 관련
+테스트를 먼저 갱신하고 세 담당자에게 알린다.
+
+```text
+인증 → 모든 보호 API: Authorization: Bearer <Supabase access token>
+사용자 식별 → 검증된 JWT의 sub (요청 body의 user_id 사용 금지)
+자막 한 줄 → { video_id, time, en, ko }
+Tutor 입력 → { user_id, video_id, timestamp, current_subtitle,
+               nearby_subtitles, saved_words, learner_profile,
+               conversation_history, user_message }
+Tutor 출력 → { conversation_id, message_id, reply,
+               suggested_questions, provider, model, usage }
+Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저장
+```
+
+서윤의 자막·사전 데이터는 경락의 Tutor 문맥 입력으로 전달되고, 소예의 저장 단어·
+학습 이력은 경락의 학습자 프로필 입력으로 전달된다. 어느 한 영역이 아직 구현되지
+않았으면 위 계약을 지키는 fixture/mock으로 먼저 연결하고, 임시 동작임을 문서와
+테스트에 표시한다.
+
+## 4. 공통 구현 규칙
 
 ### Python·FastAPI
 
 - 타입 힌트를 작성하고, 외부 입력은 Pydantic 모델로 검증한다.
+- **초심자도 처음 읽고 흐름을 따라갈 수 있도록 주석과 docstring을 작성한다.**
+  - 공개 함수·클래스·라우터 함수에는 한 줄 이상의 docstring을 작성하고, 역할과
+    입력/반환값, DB·캐시·외부 API 호출 같은 중요한 부작용을 설명한다.
+  - 복잡한 조건문, 인증·권한 처리, 캐시 순서, 데이터 변환, fallback처럼 의도가 바로
+    드러나지 않는 코드에는 코드 바로 위에 한국어 주석으로 **왜** 필요한지 적는다.
+  - `# i를 1 증가`처럼 코드를 그대로 읽어 주는 주석은 피하고, 이름·구조만으로도
+    의도가 명확한 짧은 코드에는 불필요한 주석을 추가하지 않는다.
+  - 환경변수, API 필드, DB 컬럼, 외부 서비스의 의미가 처음 등장하는 위치에는
+    용도와 예시를 함께 적는다. 비밀값 자체는 예시와 주석에도 넣지 않는다.
+  - 기능을 수정할 때 기존 주석·docstring이 실제 동작과 다르면 반드시 함께 고친다.
 - 비동기 외부 I/O에는 `async` API를 사용한다. 동기식·오래 걸리는 작업을 async
   라우터에서 직접 실행하지 않는다.
 - 오류를 숨기거나 임의의 성공 응답으로 바꾸지 않는다. `HTTPException`과 API 명세의
@@ -84,7 +141,7 @@ dashboard/        Streamlit 운영·분석 화면
   재현 가능해야 한다.
 - provider 응답 원문, Access Token, 개인 식별 가능 정보는 로그에 남기지 않는다.
 
-## 4. API 변경 규칙
+## 5. API 변경 규칙
 
 새 API를 만들거나 기존 API의 경로, 메서드, 요청/응답 모델, 인증, 상태 코드, 동작을
 변경하면 **아래 산출물을 같은 변경에 포함**한다.
@@ -106,7 +163,7 @@ dashboard/        Streamlit 운영·분석 화면
 
 API만 추가하고 명세, Postman Collection, 테스트 중 하나를 생략한 변경은 완료가 아니다.
 
-## 5. DB 변경 규칙
+## 6. DB 변경 규칙
 
 테이블, 컬럼, 제약조건, 인덱스, RLS 정책, 함수·트리거를 바꾸면 **SQL을 반드시 남긴다.**
 
@@ -125,8 +182,14 @@ Supabase Auth 연동 테이블은 `auth.users(id)`를 참조하고, RLS에서
 `auth.uid() = user_id` 원칙을 적용한다. 운영 데이터 삭제, 대량 갱신, `DROP`은 적용 전
 대상·복구 방법을 확인하고 팀에 공유한다.
 
-## 6. 의존성·환경 변수 변경 규칙
+## 7. 의존성·환경 변수 변경 규칙
 
+- **불필요한 외부 라이브러리 참조를 지양한다.** 새 패키지를 추가하기 전에 Python 표준
+  라이브러리, 이미 설치된 패키지, FastAPI/Pydantic의 내장 기능으로 해결할 수 있는지
+  먼저 확인한다. 단순 유틸리티 하나를 위해 큰 프레임워크나 중복 기능의 패키지를
+  추가하지 않는다.
+- 새 패키지가 꼭 필요하면 PR에 필요 이유, 대체하지 않은 이유, 사용 범위, 라이선스·보안
+  영향을 짧게 남긴다. 유지되지 않거나 출처가 불분명한 패키지는 사용하지 않는다.
 - 패키지 추가/제거/업데이트는 `uv add <package>` 또는 `uv add --dev <package>`로 한다.
   `pip install`로만 설치하거나 `requirements.txt`를 새로 만들지 않는다.
 - `pyproject.toml`이 바뀌면 생성된 `uv.lock`도 반드시 함께 커밋한다.
@@ -134,7 +197,7 @@ Supabase Auth 연동 테이블은 `auth.users(id)`를 참조하고, RLS에서
   추가한다. 실제 비밀값은 `.env`에만 두며 커밋하지 않는다.
 - `.env.example`을 도입하면 키 이름만 담고 실제 값은 절대 넣지 않는다.
 
-## 7. 테스트와 검증
+## 8. 테스트와 검증
 
 기본 검증 명령은 다음과 같다.
 
@@ -152,7 +215,7 @@ uv run uvicorn app.main:app --reload --port 8000
   최소한 변경된 요청을 직접 확인한다.
 - 코드와 문서 편집 후 `git diff --check`를 실행한다.
 
-## 8. Git과 협업 방식
+## 9. Git과 협업 방식
 
 - 한 작업은 하나의 목적에 집중한다. 다른 담당자의 파일을 무관하게 포맷하거나
   되돌리지 않는다.
@@ -165,14 +228,17 @@ uv run uvicorn app.main:app --reload --port 8000
 - API 계약이나 DB 구조가 바뀌면 구현 전에 팀에 공유하고, 프론트엔드가 사용할 수 있는
   상태인지 `IMPLEMENTED` 표기로 명확히 알린다.
 
-## 9. 작업 완료 체크리스트
+## 10. 작업 완료 체크리스트
 
 작업을 완료하기 전 해당 항목을 확인한다.
 
 - [ ] 코드가 책임 경계에 맞게 배치되어 있다.
+- [ ] 공개 함수·클래스·라우터에 초심자도 이해할 수 있는 docstring이 있고, 복잡한
+  로직에는 "왜"를 설명하는 최신 주석이 있다.
 - [ ] API 변경이면 명세, Postman Collection, 테스트가 함께 갱신되었다.
 - [ ] DB 변경이면 migration SQL, `db_schema.sql`, RLS/인덱스, 관련 테스트가 갱신되었다.
 - [ ] 인증이 필요한 기능은 JWT `sub` 기반 사용자 식별과 소유권 검증을 사용한다.
+- [ ] 새 외부 라이브러리의 필요성과 기존/표준 기능으로 대체할 수 없는 이유를 확인했다.
 - [ ] 새 패키지는 `uv`로 추가되었고 `uv.lock`이 갱신되었다.
 - [ ] 새 설정값은 환경변수와 문서에 반영되었으며 비밀값은 커밋되지 않았다.
 - [ ] `uv run pytest`와 `git diff --check`를 실행했거나, 실행할 수 없었던 이유를 기록했다.
