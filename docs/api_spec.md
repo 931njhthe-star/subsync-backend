@@ -1,248 +1,322 @@
-# SubSync REST API 명세서 (v1)
+# SubSync REST API 명세서
 
-> **Base URL**: `http://localhost:8000/api/v1` (로컬) / `https://api.subsync.xyz/api/v1` (운영)  
-> 모든 요청과 응답은 `application/json; charset=utf-8`을 기본으로 한다.
+현재 저장소에 실제로 등록된 FastAPI 라우트와 Pydantic 스키마를 기준으로 작성한 문서다.
+
+## 공통 정보
+
+- 로컬 Base URL: `http://127.0.0.1:8000`
+- API v1 Base URL: `http://127.0.0.1:8000/api/v1`
+- 요청/응답 형식: `application/json; charset=utf-8`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- 현재 Video Tutor API에는 인증 dependency가 연결되어 있지 않다. 인증 연동 전까지는
+  개발용 API로 사용한다.
+
+## 현재 구현된 엔드포인트
+
+| Method | Path | 인증 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/health` | 불필요 | 서버 상태 확인 |
+| `POST` | `/api/v1/tutor/ask` | 현재 불필요 | 영상 자막 문맥 기반 Tutor 질문 |
 
 ---
 
-## 1. 인증 (Authentication)
+## 1. Health Check
 
-### 1.1 회원가입
-- **Endpoint**: `POST /auth/signup`
-- **Request Body**:
-```json
-{
-  "email": "user@example.com",
-  "password": "securepassword123",
-  "nickname": "지훈"
-}
-```
-- **Response (201 Created)**:
-```json
-{
-  "user_id": "usr_9f8c12a4",
-  "email": "user@example.com",
-  "nickname": "지훈",
-  "access_token": "eyJhbGciOi...",
-  "token_type": "bearer"
-}
-```
+### `GET /health`
 
-### 1.2 로그인
-- **Endpoint**: `POST /auth/login`
-- **Request Body**:
-```json
-{
-  "email": "user@example.com",
-  "password": "securepassword123"
-}
-```
-- **Response (200 OK)**:
-```json
-{
-  "user_id": "usr_9f8c12a4",
-  "email": "user@example.com",
-  "nickname": "지훈",
-  "access_token": "eyJhbGciOi...",
-  "token_type": "bearer"
-}
-```
+서버 프로세스가 요청을 받을 수 있는지 확인한다. 외부 LLM, DB, Redis 상태까지 검사하지는
+않는다.
 
-### 1.3 내 정보 조회 (인증 테스트용)
-- **Endpoint**: `GET /auth/me`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Response (200 OK)**:
+### 응답 `200 OK`
+
 ```json
 {
-  "user_id": "usr_9f8c12a4",
-  "email": "user@example.com",
-  "nickname": "지훈",
-  "saved_words_count": 14
+  "status": "ok"
 }
 ```
 
 ---
 
-## 2. 사전 (Dictionary)
+## 2. Video Tutor 질문
 
-### 2.1 Hover 빠른 단어 뜻 조회 (로그인 불필요)
-- **Endpoint**: `GET /dict/hover?word={word}`
-- **설명**: 0.5초 이내 빠른 응답. Redis/로컬사전 우선 조회.
-- **Response (200 OK)**:
+### `POST /api/v1/tutor/ask`
+
+현재 영상 시점의 자막과 사용자의 학습 행동 데이터를 이용해 Tutor 답변을 생성한다.
+
+### 요청 헤더
+
+```http
+Content-Type: application/json
+```
+
+### 요청 본문
+
+| 필드 | 타입 | 필수 | 제한/기본값 |
+| --- | --- | --- | --- |
+| `video_id` | string | 예 | 1~50자 |
+| `timestamp` | number | 예 | 0 이상, 초 단위 |
+| `user_message` | string | 예 | 1~2,000자 |
+| `recent_subtitles` | array | 아니오 | 최대 100개, 기본값 `[]` |
+| `learner_signals` | object | 아니오 | 기본값 `{}` |
+| `conversation_history` | array | 아니오 | 최대 10개, 기본값 `[]` |
+| `focus_word` | string/null | 아니오 | 최대 100자, 기본값 `null` |
+
+#### `recent_subtitles` 원소
+
+| 필드 | 타입 | 필수 | 제한/기본값 |
+| --- | --- | --- | --- |
+| `time` | number | 예 | 0 이상, 초 단위 |
+| `en` | string | 예 | 1~500자 |
+| `ko` | string/null | 아니오 | 최대 500자, 기본값 `null` |
+
+#### `learner_signals`
+
+| 필드 | 타입 | 필수 | 제한/기본값 |
+| --- | --- | --- | --- |
+| `saved_words` | array | 아니오 | 최대 500개, 기본값 `[]` |
+| `saved_word_count` | integer/null | 아니오 | 0~100,000, 기본값 `null` |
+| `quiz_accuracy` | number/null | 아니오 | 0~1, 기본값 `null` |
+| `average_response_time_ms` | number/null | 아니오 | 0~300,000, 기본값 `null` |
+| `recent_quiz_accuracy` | number/null | 아니오 | 0~1, 기본값 `null` |
+| `recent_response_time_ms` | number/null | 아니오 | 0~300,000, 기본값 `null` |
+| `quiz_attempts` | integer | 아니오 | 0~100,000, 기본값 `0` |
+
+`saved_words`의 원소는 다음 형식이다.
+
 ```json
 {
-  "word": "honest",
-  "meanings": ["정직한", "솔직한"]
+  "word": "honest"
 }
 ```
 
-### 2.2 Click 상세 단어 설명 조회 (로그인 필요)
-- **Endpoint**: `GET /dict/detail?word={word}&context={sentence}`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Query Params**:
-  - `word`: 검색 단어
-  - `context` (선택): 단어가 등장한 자막 문장
-- **Response (200 OK)**:
+#### `conversation_history` 원소
+
 ```json
 {
-  "word": "honest",
-  "phonetic": "/ˈɒnɪst/",
-  "part_of_speech": "형용사",
-  "definitions": [
-    "정직한, 솔직한",
-    "순수한, 정당한"
-  ],
-  "context_meaning": "현재 문장에서는 '솔직한'이라는 의미입니다.",
-  "phrases": [
-    {
-      "expression": "be honest with ~",
-      "meaning": "~에게 솔직하다"
-    }
-  ],
-  "is_saved": false
+  "role": "user",
+  "message": "이 표현을 다른 상황에서도 사용할 수 있나요?"
 }
 ```
 
----
+`role`은 `user` 또는 `tutor`만 허용한다.
 
-## 3. 단어장 (Saved Words)
+### 요청 예시
 
-### 3.1 단어 저장 (로그인 필요)
-- **Endpoint**: `POST /words/save`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Request Body**:
-```json
-{
-  "word": "honest",
-  "meaning": "정직한, 솔직한",
-  "video_id": "arj7oStGLkU",
-  "timestamp": 156.4,
-  "context_sentence": "I want to be honest with you."
-}
-```
-- **Response (201 Created)**:
-```json
-{
-  "id": "wrd_88a1b2",
-  "word": "honest",
-  "saved_at": "2026-09-02T16:00:00Z"
-}
-```
-
-### 3.2 저장 단어 목록 조회
-- **Endpoint**: `GET /words/list?limit=50&offset=0`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Response (200 OK)**:
-```json
-{
-  "total": 1,
-  "words": [
-    {
-      "id": "wrd_88a1b2",
-      "word": "honest",
-      "meaning": "정직한, 솔직한",
-      "video_id": "arj7oStGLkU",
-      "context_sentence": "I want to be honest with you.",
-      "saved_at": "2026-09-02T16:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-## 4. Video Tutor (AI)
-
-### 4.1 영상 기반 사용자 질문/답변 (로그인 필요)
-- **Endpoint**: `POST /tutor/ask`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Request Body**:
 ```json
 {
   "video_id": "arj7oStGLkU",
   "timestamp": 156.4,
   "user_message": "방금 나온 'be honest with'는 언제 주로 쓰나요?",
   "recent_subtitles": [
-    { "time": 150.0, "en": "I know it sounds crazy.", "ko": "말도 안 되게 들리겠지만요." },
-    { "time": 156.4, "en": "I want to be honest with you.", "ko": "솔직하게 말씀드리고 싶어요." }
-  ]
+    {
+      "time": 150.0,
+      "en": "I know it sounds crazy.",
+      "ko": "말도 안 되게 들리겠지만요."
+    },
+    {
+      "time": 156.4,
+      "en": "I want to be honest with you.",
+      "ko": "솔직하게 말씀드리고 싶어요."
+    }
+  ],
+  "learner_signals": {
+    "saved_words": [
+      { "word": "honest" }
+    ],
+    "quiz_accuracy": 0.72,
+    "average_response_time_ms": 7500,
+    "quiz_attempts": 6
+  },
+  "conversation_history": [],
+  "focus_word": "honest"
 }
 ```
-- **Response (200 OK)**:
+
+### 내부 처리
+
+1. `timestamp` 주변의 자막을 최대 7줄로 구성한다.
+2. 저장 단어, 퀴즈 정답률, 평균 응답 시간을 이용해 내부 CEFR 수준을 추론한다.
+3. 현재 기준 가중치는 정답률 55%, 응답 시간 25%, 저장 단어 수 20%다.
+4. 데이터가 부족하면 A2/`guided`를 기본값으로 사용하고, 퀴즈 시도 횟수로 confidence를
+   보정한다.
+5. 설정된 LLM provider를 순서대로 호출한다.
+
+Provider 순서는 `LLM_PROVIDER` 값에 따라 다음과 같다.
+
+| `LLM_PROVIDER` | 호출 순서 |
+| --- | --- |
+| `stub` | Rule-based stub |
+| `gemini` | Gemini → Groq → stub |
+| `auto` | Gemini → Groq → stub |
+| `groq` | Groq → Gemini → stub |
+
+API key가 없는 provider는 건너뛴다. provider가 `429`를 반환하거나 로컬 token guard에
+도달하면 다음 provider를 시도한다. 모든 외부 provider가 실패하면 stub 응답을 반환한다.
+
+### 응답 `200 OK`
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `conversation_id` | string | 현재 대화 식별자. 현재는 영구 저장하지 않는다. |
+| `message_id` | string | 현재 답변 식별자. 현재는 영구 저장하지 않는다. |
+| `reply` | string | Tutor 답변 |
+| `suggested_questions` | array[string] | 후속 질문 최대 3개 |
+| `provider` | string | 실제 답변에 사용된 provider: `gemini`, `groq`, `stub` |
+| `model` | string | 실제 사용 모델명 |
+| `usage` | object | provider 응답에서 정규화한 토큰 사용량 |
+| `learner_level` | string | `A1`, `A2`, `B1`, `B2`, `C1` |
+| `tutor_difficulty` | string | 내부 Tutor 난이도 |
+| `profile_confidence` | number | 0~1 사이의 수준 추론 신뢰도 |
+| `context_subtitle_count` | integer | 답변에 사용한 주변 자막 수 |
+
+`usage`는 다음 형식이다.
+
+```json
+{
+  "input_tokens": 642,
+  "output_tokens": 118,
+  "total_tokens": 760
+}
+```
+
+stub 응답은 실제 LLM token usage가 없으므로 usage 값이 0이다.
+
+### 응답 예시
+
 ```json
 {
   "conversation_id": "conv_49a1d",
   "message_id": "msg_001",
-  "reply": "상대방에게 숨김없이 진심이나 사실을 털어놓을 때 주로 사용해요. 예를 들어 'Be honest with me'는 '나한테 솔직하게 말해줘'라는 뜻입니다.",
+  "reply": "'be honest with'는 상대방에게 솔직하게 말하거나 진실을 숨기지 않을 때 사용해요. 이 자막에서는 '너에게 솔직해지고 싶다'는 의미입니다.",
   "suggested_questions": [
     "비슷한 다른 표현은 없나요?",
-    "예문 더 보여줘"
-  ]
+    "예문을 더 보여줘"
+  ],
+  "provider": "groq",
+  "model": "openai/gpt-oss-20b",
+  "usage": {
+    "input_tokens": 642,
+    "output_tokens": 118,
+    "total_tokens": 760
+  },
+  "learner_level": "A2",
+  "tutor_difficulty": "guided",
+  "profile_confidence": 0.31,
+  "context_subtitle_count": 2
 }
 ```
 
-### 4.2 Video Tutor 선제 질문 트리거 (로그인 필요)
-- **Endpoint**: `POST /tutor/proactive`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Request Body**:
+### 유효성 검증 실패 `422 Unprocessable Entity`
+
+FastAPI 기본 validation 응답을 반환한다. 예를 들어 `timestamp`가 음수이거나 `en`이
+빈 문자열이면 요청이 거부된다.
+
 ```json
 {
-  "video_id": "arj7oStGLkU",
-  "current_timestamp": 210.5,
-  "current_subtitle_en": "I ended up working there for five years."
-}
-```
-- **Response (200 OK)**:
-```json
-{
-  "has_proactive": true,
-  "message_id": "msg_002",
-  "question": "방금 유용한 표현이 하나 나왔어요.\n\n\"I ended up working there for five years.\"\n\n'end up ~ing'가 어떤 의미인지 알고 있나요?",
-  "options": [
-    { "id": "opt_yes", "label": "알아요" },
-    { "id": "opt_no", "label": "모르겠어요" }
+  "detail": [
+    {
+      "loc": ["body", "timestamp"],
+      "msg": "Input should be greater than or equal to 0",
+      "type": "greater_than_equal"
+    }
   ]
 }
-```
-
-### 4.3 Tutor 응답 피드백 수집 (로그인 필요)
-- **Endpoint**: `POST /tutor/feedback`
-- **Headers**: `Authorization: Bearer <access_token>`
-- **Request Body**:
-```json
-{
-  "message_id": "msg_001",
-  "rating": "up",
-  "reason": null
-}
-```
-*(rating: `"up"` | `"down"`, reason: `"너무 길어요"` | `"설명이 어려워요"` | `"영상과 무관"` | `"오답"`)*
-- **Response (200 OK)**:
-```json
-{ "status": "ok" }
 ```
 
 ---
 
-## 5. 실시간 로그 및 이벤트 수집 (Logging)
+## 3. LLM 환경변수
 
-### 5.1 사용자 행동 로그 전송
-- **Endpoint**: `POST /logs/event`
-- **Headers**: `Authorization: Bearer <access_token>` (비로그인은 토큰 생략 가능)
-- **Request Body**:
-```json
+환경변수는 서버 시작 시 읽는다. 값을 변경하면 서버를 재시작해야 한다.
+
+| 환경변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `stub` | `stub`, `gemini`, `groq`, `auto` |
+| `GEMINI_API_KEY` | 빈 문자열 | Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini 모델명 |
+| `GEMINI_TIMEOUT_SECONDS` | `20` | Gemini 요청 timeout |
+| `GEMINI_DAILY_TOKEN_LIMIT` | `0` | 일일 로컬 guard, `0`이면 비활성화 |
+| `GEMINI_MINUTE_TOKEN_LIMIT` | `0` | 분당 로컬 guard, `0`이면 비활성화 |
+| `GROQ_API_KEY` | 빈 문자열 | Groq API key |
+| `GROQ_MODEL` | `openai/gpt-oss-20b` | Groq 모델명 |
+| `GROQ_TIMEOUT_SECONDS` | `20` | Groq 요청 timeout |
+| `GROQ_DAILY_TOKEN_LIMIT` | `180000` | 일일 로컬 guard |
+| `GROQ_MINUTE_TOKEN_LIMIT` | `7000` | 분당 로컬 guard |
+
+설정 예시:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+Groq 및 Gemini 사용량은 현재 프로세스 메모리에 기록된다. 서버 재시작 또는 다중 인스턴스
+운영에서도 누적량을 유지하려면 `InMemoryUsageTracker`를 Redis/PostgreSQL 저장소로
+교체해야 한다.
+
+---
+
+## 4. 로컬 호출 예시
+
+서버 실행:
+
+```powershell
+uv run uvicorn app.main:app --reload --port 8000 --env-file .env
+```
+
+PowerShell에서 요청:
+
+```powershell
+$body = @'
 {
-  "event_type": "word_click",
   "video_id": "arj7oStGLkU",
   "timestamp": 156.4,
-  "payload": {
-    "word": "honest",
-    "context": "I want to be honest with you."
+  "user_message": "be honest with는 어떤 뜻인가요?",
+  "recent_subtitles": [
+    {
+      "time": 156.4,
+      "en": "I want to be honest with you.",
+      "ko": "솔직하게 말씀드리고 싶어요."
+    }
+  ],
+  "learner_signals": {
+    "quiz_accuracy": 0.72,
+    "average_response_time_ms": 7500,
+    "quiz_attempts": 6
   }
 }
+'@
+
+Invoke-RestMethod `
+  -Uri 'http://127.0.0.1:8000/api/v1/tutor/ask' `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body $body
 ```
-*(event_type 종류: `"login"`, `"watch_start"`, `"word_click"`, `"word_save"`, `"tutor_ask"`, `"tutor_proactive"`, `"feedback"`)*
-- **Response (200 OK)**:
-```json
-{ "status": "recorded" }
+
+Gemini fallback을 확인하려면 Gemini의 로컬 한도를 낮춰 다음처럼 설정한다.
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_DAILY_TOKEN_LIMIT=1
+GROQ_API_KEY=your_groq_api_key
 ```
+
+유효한 Groq key가 있고 서버를 재시작한 뒤 요청하면 응답의 `provider`가 `groq`인지
+확인할 수 있다.
+
+---
+
+## 5. 미구현 예정 API
+
+아래 경로는 기획/설계 문서에만 존재하며 현재 FastAPI 앱에는 등록되어 있지 않다.
+
+- 인증: `/api/v1/auth/signup`, `/api/v1/auth/login`, `/api/v1/auth/me`
+- 사전: `/api/v1/dict/hover`, `/api/v1/dict/detail`
+- 단어장: `/api/v1/words/save`, `/api/v1/words/list`
+- Tutor 확장: `/api/v1/tutor/proactive`, `/api/v1/tutor/feedback`
+- 행동 로그: `/api/v1/logs/event`
+
+해당 기능을 구현할 때 이 문서의 현재 구현 섹션에 실제 스키마와 상태 코드를 추가한다.

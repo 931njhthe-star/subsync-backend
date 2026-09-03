@@ -7,7 +7,7 @@ Chrome Extension과 Streamlit 대시보드에 REST API를 제공하며, 사용�
 
 - **인증 및 사용자 관리**: 회원가입, 로그인, JWT 기반 인증, 학습 프로필 관리
 - **영어 단어 학습**: 자막 단어 Hover 빠른 조회, Click 상세 조회, 단어장 저장 및 목록 조회
-- **Video Tutor**: 영상 자막과 재생 시점을 문맥으로 활용하는 Gemini 기반 질의응답 및 피드백 수집
+- **Video Tutor**: 영상 자막과 재생 시점을 문맥으로 활용하는 Gemini/Groq 기반 질의응답 및 피드백 수집
 - **학습 기록**: 시청 이력, 저장 단어, 단어 클릭, Tutor 대화 이력 기록
 - **운영 및 분석**: Streamlit 기반 KPI·행동 로그·AI 응답 품질 분석
 
@@ -21,7 +21,8 @@ Chrome Extension / Streamlit Dashboard
            FastAPI Backend
           ├── Supabase (PostgreSQL): 사용자·학습 데이터
           ├── Redis: 세션·단어 조회 캐시
-          ├── Google Gemini: Video Tutor 응답 생성
+          ├── Google Gemini: Video Tutor 기본 응답 생성
+          ├── Groq: Gemini quota/rate limit 시 fallback 응답 생성
           └── YouTube: 영상·자막 데이터
 ```
 
@@ -72,7 +73,9 @@ app/
 │       ├── tutor.py         # /tutor
 │       └── logs.py          # /logs
 ├── ai/
-│   ├── gemini_client.py     # Gemini API 호출 래퍼
+│   ├── llm_client.py        # Gemini/Groq API 호출 래퍼
+│   ├── provider_router.py   # provider fallback 및 quota guard
+│   ├── usage_tracker.py     # provider별 토큰 사용량 기록
 │   ├── context_builder.py   # 자막·시점 문맥 구성
 │   ├── prompts.py           # Tutor 프롬프트
 │   └── tutor_service.py     # AI 응답·피드백 처리
@@ -125,9 +128,35 @@ ENV=development
 SUPABASE_URL=
 SUPABASE_KEY=
 REDIS_URL=
+LLM_PROVIDER=stub
 GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_SECONDS=20
+GEMINI_DAILY_TOKEN_LIMIT=0
+GEMINI_MINUTE_TOKEN_LIMIT=0
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_TIMEOUT_SECONDS=20
+GROQ_DAILY_TOKEN_LIMIT=180000
+GROQ_MINUTE_TOKEN_LIMIT=7000
 JWT_SECRET_KEY=
 ```
+
+Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 없이도 문맥/프로필/API
+계약을 확인할 수 있습니다. 실제 provider를 사용하려면 서버 환경변수에 다음 중 하나를
+설정합니다.
+
+- `LLM_PROVIDER=gemini`: Gemini 우선, 한도 초과/장애 시 Groq → stub
+- `LLM_PROVIDER=groq`: Groq 우선, 한도 초과/장애 시 Gemini → stub
+- `LLM_PROVIDER=auto`: Gemini 우선 fallback 체인
+
+`GEMINI_DAILY_TOKEN_LIMIT`/`GEMINI_MINUTE_TOKEN_LIMIT`는 AI Studio에서 확인한 프로젝트
+한도로 설정합니다. Gemini의 활성 한도는 프로젝트·모델·계정에 따라 달라질 수 있으므로
+기본값은 로컬 guard를 끄는 `0`입니다. Groq 값은 무료 플랜을 가정한 보수적 기본값이며,
+사용 중인 plan에 맞게 조정할 수 있습니다. 실제 provider 응답의 usage도 기록하고,
+`429` 응답 또는 로컬 quota 도달 시 다음 provider로 전환합니다. 상세한 프로필 추론 및
+fallback 규칙은
+[AI Tutor 기초 설계](docs/ai-tutor.md)를 참고하세요.
 
 ## 문서
 
