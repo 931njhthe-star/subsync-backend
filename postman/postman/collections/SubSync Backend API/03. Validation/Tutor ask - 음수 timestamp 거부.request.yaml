@@ -1,0 +1,32 @@
+$kind: http-request
+description: Pydantic의 timestamp >= 0 검증을 확인합니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "video_id": "{{video_id}}",
+      "timestamp": -1,
+      "user_message": "테스트"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('상태 코드는 422이다', function () {
+          pm.response.to.have.status(422);
+      });
+
+      const body = pm.response.json();
+      pm.test('validation detail이 존재한다', function () {
+          pm.expect(body.detail).to.be.an('array').and.not.empty;
+      });
+
+      pm.test('timestamp 오류를 반환한다', function () {
+          const locations = body.detail.map(function (item) { return item.loc.join('.'); });
+          pm.expect(locations.some(function (location) { return location.includes('timestamp'); })).to.eql(true);
+      });
+    language: text/javascript
+order: 1000

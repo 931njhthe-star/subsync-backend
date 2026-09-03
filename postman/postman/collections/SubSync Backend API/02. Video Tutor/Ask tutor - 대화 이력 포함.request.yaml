@@ -1,0 +1,51 @@
+$kind: http-request
+description: 이전 대화 이력을 포함한 Tutor 요청이 정상 처리되는지 확인합니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "video_id": "{{video_id}}",
+      "timestamp": {{timestamp}},
+      "user_message": "예문을 하나 더 보여주세요.",
+      "recent_subtitles": [
+        {
+          "time": 156.4,
+          "en": "I want to be honest with you.",
+          "ko": "솔직하게 말씀드리고 싶어요."
+        }
+      ],
+      "learner_signals": {
+        "quiz_accuracy": 0.72,
+        "average_response_time_ms": 7500,
+        "quiz_attempts": 6
+      },
+      "conversation_history": [
+        {
+          "role": "user",
+          "message": "be honest with는 어떤 뜻인가요?"
+        },
+        {
+          "role": "tutor",
+          "message": "상대방에게 솔직하게 말할 때 사용하는 표현이에요."
+        }
+      ],
+      "focus_word": "honest"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('상태 코드는 200이다', function () {
+          pm.response.to.have.status(200);
+      });
+
+      const body = pm.response.json();
+      pm.test('대화 이력이 있어도 답변을 반환한다', function () {
+          pm.expect(body.reply).to.be.a('string').and.not.empty;
+          pm.expect(body.context_subtitle_count).to.be.at.least(1);
+      });
+    language: text/javascript
+order: 2000

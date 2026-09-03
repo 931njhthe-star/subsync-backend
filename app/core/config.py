@@ -39,6 +39,10 @@ class Settings:
     groq_minute_token_limit: int = int(
         os.getenv("GROQ_MINUTE_TOKEN_LIMIT", "7000")
     )
+    # 선제 질문은 재생 이벤트마다 LLM을 호출하지 않도록 영상 시점 기준 cooldown을 둔다.
+    tutor_proactive_cooldown_seconds: float = float(
+        os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "45")
+    )
 
 # 라우터 dependency가 공유하는 프로세스 단위 설정 인스턴스다.
 settings = Settings()

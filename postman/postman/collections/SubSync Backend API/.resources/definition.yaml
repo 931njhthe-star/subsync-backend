@@ -1,0 +1,25 @@
+$kind: collection
+description: |-
+  현재 구현된 SubSync FastAPI 라우트에 대한 회귀 테스트 모음입니다.
+
+  - 기본 URL은 {{base_url}} 변수로 관리합니다.
+  - 현재 tutor/ask는 인증 dependency가 연결되지 않았으므로 토큰 없이 실행됩니다.
+  - Supabase Auth 연동 후에는 환경 변수의 access_token을 입력하면 요청에 Bearer 토큰이 자동으로 추가됩니다.
+variables:
+  base_url: http://127.0.0.1:8000
+  video_id: arj7oStGLkU
+  timestamp: "156.4"
+  conversation_id: ""
+  message_id: ""
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Supabase Auth를 연결한 뒤 access_token이 있으면 보호 API에 자동으로 전달한다.
+      const token = pm.environment.get('access_token');
+      if (token && token.trim()) {
+          pm.request.headers.upsert({
+              key: 'Authorization',
+              value: `Bearer ${token.trim()}`
+          });
+      }
+    language: text/javascript

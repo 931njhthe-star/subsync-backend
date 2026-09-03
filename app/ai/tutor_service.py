@@ -35,6 +35,7 @@ class TutorAskCommand:
     learner_signals: LearnerSignals = LearnerSignals()
     conversation_history: tuple[ConversationTurn, ...] = ()
     focus_word: str | None = None
+    conversation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -219,7 +220,9 @@ class TutorService:
                 )
 
         return TutorResult(
-            conversation_id=f"conv_{uuid4().hex[:12]}",
+            # 클라이언트가 기존 대화를 전달하면 같은 ID를 유지하고, 첫 질문이면
+            # 새 opaque ID를 발급해 다음 요청에서 대화를 이어갈 수 있게 한다.
+            conversation_id=command.conversation_id or f"conv_{uuid4().hex[:12]}",
             message_id=f"msg_{uuid4().hex[:12]}",
             answer=answer,
             profile=profile,
