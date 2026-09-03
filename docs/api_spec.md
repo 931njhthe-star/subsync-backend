@@ -8,15 +8,17 @@
 - API v1 Base URL: `http://127.0.0.1:8000/api/v1`
 - 요청/응답 형식: `application/json; charset=utf-8`
 - Swagger UI: `http://127.0.0.1:8000/docs`
-- 현재 Video Tutor API에는 인증 dependency가 연결되어 있지 않다. 인증 연동 전까지는
-  개발용 API로 사용한다.
+- Google 로그인과 Access/Refresh Token 발급은 Supabase Auth와 프론트 클라이언트가 담당한다.
+- 인증이 필요한 API는 `Authorization: Bearer <Supabase Access Token>` 헤더를 요구한다.
+- FastAPI는 Access Token을 검증한 뒤 JWT의 `sub`를 사용자 ID로 사용한다.
 
 ## 현재 구현된 엔드포인트
 
 | Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
 | `GET` | `/health` | 불필요 | 서버 상태 확인 |
-| `POST` | `/api/v1/tutor/ask` | 현재 불필요 | 영상 자막 문맥 기반 Tutor 질문 |
+| `GET` | `/api/v1/auth/me` | 필요 | 현재 인증 사용자 확인 |
+| `POST` | `/api/v1/tutor/ask` | 필요 | 영상 자막 문맥 기반 Tutor 질문 |
 
 ---
 
@@ -37,7 +39,51 @@
 
 ---
 
-## 2. Video Tutor 질문
+## 2. 현재 사용자 확인
+
+### `GET /api/v1/auth/me`
+
+Supabase Access Token을 검증하고 현재 로그인한 사용자의 최소 식별 정보를 반환한다.
+Google 로그인 화면이나 토큰 발급은 이 API가 담당하지 않는다.
+
+### 요청 헤더
+
+```http
+Authorization: Bearer <supabase_access_token>
+```
+
+### 응답 `200 OK`
+
+```json
+{
+  "user_id": "7b5d2f32-1234-4f4a-8abc-123456789abc",
+  "email": "learner@example.com",
+  "role": "authenticated",
+  "session_id": null
+}
+```
+
+`session_id`는 비대칭 JWT claim에 포함된 경우에만 반환된다. Supabase Auth 검증 API
+방식에서는 `null`일 수 있다.
+
+### 응답 `401 Unauthorized`
+
+토큰이 없거나 만료·변조되었거나 발급자 또는 대상이 올바르지 않은 경우 반환한다.
+
+```json
+{
+  "detail": "유효하지 않거나 만료된 Access Token입니다."
+}
+```
+
+### 응답 `503 Service Unavailable`
+
+서버에 Supabase Auth 설정이 없거나 JWKS/Auth 검증 서버에 일시적으로 접근할 수 없는
+경우 반환한다.
+
+---
+
+## 3. Video Tutor 질문
 
 ### `POST /api/v1/tutor/ask`
 
@@ -47,6 +93,7 @@
 
 ```http
 Content-Type: application/json
+Authorization: Bearer <supabase_access_token>
 ```
 
 ### 요청 본문
@@ -225,7 +272,28 @@ FastAPI 기본 validation 응답을 반환한다. 예를 들어 `timestamp`가 �
 
 ---
 
-## 3. LLM 환경변수
+## 4. Supabase Auth 환경변수
+
+환경변수는 서버 시작 시 읽는다. Google OAuth Provider와 사용자 계정은 Supabase Dashboard에서
+설정하고, 백엔드는 아래 값으로 Access Token을 검증한다.
+
+| 환경변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `SUPABASE_URL` | 빈 문자열 | Supabase 프로젝트 URL |
+| `SUPABASE_KEY` | 빈 문자열 | HS256 Auth API 검증에 사용하는 publishable/anon key |
+| `SUPABASE_JWT_AUDIENCE` | `authenticated` | 검증할 JWT `aud` claim |
+| `SUPABASE_JWT_ISSUER` | `{SUPABASE_URL}/auth/v1` | 검증할 JWT `iss` claim |
+| `SUPABASE_AUTH_VERIFICATION_MODE` | `auto` | `auto`, `jwks`, `auth_api` |
+| `SUPABASE_JWKS_CACHE_SECONDS` | `600` | JWKS 키셋 캐시 시간(초) |
+| `SUPABASE_AUTH_TIMEOUT_SECONDS` | `5` | Auth API 검증 요청 timeout(초) |
+
+`auto` 모드에서는 비대칭 서명 알고리즘을 JWKS로 로컬 검증하고, `HS256` 토큰은
+`/auth/v1/user`에 검증을 위임한다. `SUPABASE_KEY`와 JWT secret은 Git에 커밋하거나
+프론트에 노출하지 않는다.
+
+---
+
+## 5. LLM 환경변수
 
 환경변수는 서버 시작 시 읽는다. 값을 변경하면 서버를 재시작해야 한다.
 
@@ -258,7 +326,7 @@ Groq 및 Gemini 사용량은 현재 프로세스 메모리에 기록된다. 서�
 
 ---
 
-## 4. 로컬 호출 예시
+## 6. 로컬 호출 예시
 
 서버 실행:
 
@@ -269,6 +337,8 @@ uv run uvicorn app.main:app --reload --port 8000 --env-file .env
 PowerShell에서 요청:
 
 ```powershell
+$accessToken = "paste-your-supabase-access-token"
+
 $body = @'
 {
   "video_id": "arj7oStGLkU",
@@ -292,6 +362,7 @@ $body = @'
 Invoke-RestMethod `
   -Uri 'http://127.0.0.1:8000/api/v1/tutor/ask' `
   -Method Post `
+  -Headers @{ Authorization = "Bearer $accessToken" } `
   -ContentType 'application/json' `
   -Body $body
 ```
@@ -309,11 +380,11 @@ GROQ_API_KEY=your_groq_api_key
 
 ---
 
-## 5. 미구현 예정 API
+## 7. 미구현 예정 API
 
 아래 경로는 기획/설계 문서에만 존재하며 현재 FastAPI 앱에는 등록되어 있지 않다.
 
-- 인증: `/api/v1/auth/signup`, `/api/v1/auth/login`, `/api/v1/auth/me`
+- 인증: 프론트의 Supabase Auth Google 로그인, 백엔드 `/api/v1/auth/me`는 구현됨
 - 사전: `/api/v1/dict/hover`, `/api/v1/dict/detail`
 - 단어장: `/api/v1/words/save`, `/api/v1/words/list`
 - Tutor 확장: `/api/v1/tutor/proactive`, `/api/v1/tutor/feedback`

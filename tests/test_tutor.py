@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_current_user
 from app.ai.context_builder import SubtitleLine, build_tutor_context
 from app.ai.learner_profile import (
     CEFRLevel,
@@ -19,6 +20,7 @@ from app.ai.prompts import build_tutor_prompt
 from app.ai.provider_router import ProviderQuota, ProviderRouter
 from app.ai.tutor_service import TutorAskCommand, TutorService
 from app.ai.usage_tracker import InMemoryUsageTracker
+from app.core.security import CurrentUser
 from app.main import app
 
 
@@ -89,27 +91,36 @@ def test_prompt_marks_subtitles_as_reference_data():
 
 
 def test_tutor_api_works_without_gemini_key():
-    response = client.post(
-        "/api/v1/tutor/ask",
-        json={
-            "video_id": "arj7oStGLkU",
-            "timestamp": 156.4,
-            "user_message": "be honest with는 언제 쓰나요?",
-            "recent_subtitles": [
-                {
-                    "time": 156.4,
-                    "en": "I want to be honest with you.",
-                    "ko": "솔직하게 말씀드리고 싶어요.",
-                }
-            ],
-            "learner_signals": {
-                "saved_words": [{"word": "honest"}],
-                "quiz_accuracy": 0.72,
-                "average_response_time_ms": 7_500,
-                "quiz_attempts": 6,
-            },
-        },
+    # 실제 Supabase 호출 없이 보호된 Tutor API만 검증하기 위해 인증 dependency를
+    # 테스트 사용자로 대체한다. 실제 토큰 검증은 tests/test_auth.py에서 별도로 검증한다.
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id="test-user-id",
+        email="test@example.com",
     )
+    try:
+        response = client.post(
+            "/api/v1/tutor/ask",
+            json={
+                "video_id": "arj7oStGLkU",
+                "timestamp": 156.4,
+                "user_message": "be honest with는 언제 쓰나요?",
+                "recent_subtitles": [
+                    {
+                        "time": 156.4,
+                        "en": "I want to be honest with you.",
+                        "ko": "솔직하게 말씀드리고 싶어요.",
+                    }
+                ],
+                "learner_signals": {
+                    "saved_words": [{"word": "honest"}],
+                    "quiz_accuracy": 0.72,
+                    "average_response_time_ms": 7_500,
+                    "quiz_attempts": 6,
+                },
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 200
     body = response.json()

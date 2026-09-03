@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from fastapi import APIRouter, Depends
 
+from app.api.deps import get_current_user
 from app.ai.context_builder import ConversationTurn, SubtitleLine
 from app.ai.learner_profile import LearnerSignals
 from app.ai.llm_client import GeminiClient, GroqClient, RuleBasedTutorClient
@@ -19,6 +20,7 @@ from app.ai.tutor_service import TutorAskCommand, TutorService
 from app.ai.usage_tracker import InMemoryUsageTracker
 from app.core.config import settings
 from app.schemas.tutor import TutorAskRequest, TutorAskResponse, TutorUsageResponse
+from app.core.security import CurrentUser
 
 
 router = APIRouter(prefix="/tutor", tags=["Video Tutor"])
@@ -88,23 +90,29 @@ def get_tutor_service() -> TutorService:
 @router.post("/ask", response_model=TutorAskResponse)
 async def ask_tutor(
     request: TutorAskRequest,
+    current_user: CurrentUser = Depends(get_current_user),
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorAskResponse:
     """영상 시점의 자막 문맥을 바탕으로 Tutor 답변을 생성한다.
 
     Args:
         request: Extension이 보낸 영상 위치, 자막, 학습자 신호 및 질문.
+        current_user: Supabase Access Token으로 검증된 사용자. 이후 DB에서 이 ID의
+            학습 신호를 조회할 때 사용한다.
         service: FastAPI dependency로 주입되는 Tutor 오케스트레이터.
 
     Returns:
         실제로 답변에 사용된 provider/model과 토큰 usage를 포함한 Tutor 응답.
 
     Note:
-        인증/DB 계층이 아직 연결되지 않아 현재는 요청에 포함된
-        ``learner_signals``를 그대로 사용한다. 운영 단계에서는 인증된 사용자 ID로
-        서버가 학습 신호를 조회해야 한다.
+        현재 저장소에는 학습 데이터 repository가 아직 없으므로 요청의
+        ``learner_signals``를 임시로 사용한다. DB 연동 시에는 ``current_user.id``로
+        서버가 신호를 조회하고 클라이언트 입력을 무시해야 한다.
     """
 
+    # 인증 dependency가 사용자 ID를 검증했음을 명시한다. 현재 서비스 command에는
+    # user_id 필드가 없지만, DB repository를 연결할 때 이 값을 전달할 경계다.
+    _ = current_user
     signals = request.learner_signals
     # 저장 단어 배열과 별도로 전달된 count 중 큰 값을 사용해 부분 데이터도 보정한다.
     saved_words = tuple(item.word for item in signals.saved_words)

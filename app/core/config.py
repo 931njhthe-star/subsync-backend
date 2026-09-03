@@ -16,6 +16,26 @@ class Settings:
     """
 
     ENV: str = os.getenv("ENV", "development")
+    # Supabase Auth 설정. Google 로그인 자체는 Supabase Auth가 처리하고, 백엔드는
+    # 아래 프로젝트 정보로 Access Token만 검증한다. 비밀 키는 소스에 기록하지 않는다.
+    supabase_url: str = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    # HS256 프로젝트에서 /auth/v1/user 검증 API를 호출할 때 사용하는 publishable/anon key.
+    supabase_key: str = os.getenv("SUPABASE_KEY", "").strip()
+    supabase_jwt_audience: str = os.getenv(
+        "SUPABASE_JWT_AUDIENCE", "authenticated"
+    ).strip()
+    # 비워 두면 {SUPABASE_URL}/auth/v1을 사용한다.
+    supabase_jwt_issuer: str = os.getenv("SUPABASE_JWT_ISSUER", "").strip()
+    # auto: HS256은 Auth API, 비대칭 키는 JWKS. 운영에서는 auto를 권장한다.
+    supabase_auth_verification_mode: str = os.getenv(
+        "SUPABASE_AUTH_VERIFICATION_MODE", "auto"
+    ).strip().lower()
+    supabase_jwks_cache_seconds: int = int(
+        os.getenv("SUPABASE_JWKS_CACHE_SECONDS", "600")
+    )
+    supabase_auth_timeout_seconds: float = float(
+        os.getenv("SUPABASE_AUTH_TIMEOUT_SECONDS", "5")
+    )
     # 현재 구현에서는 아래 설정 중 Video Tutor 관련 값만 사용한다.
     # 외부 provider는 명시적으로 켠 경우에만 사용한다. 기본값은 로컬 fallback이다.
     # gemini/auto: Gemini -> Groq, groq: Groq -> Gemini 순서로 시도한다.
