@@ -1,7 +1,7 @@
 # Postman API 테스트
 
 현재 구현된 FastAPI API를 Postman에서 바로 실행할 수 있도록 Collection과 로컬 환경을
-제공한다. 인증 API와 Tutor API를 실행하려면 Supabase Access Token이 필요하다.
+제공한다.
 
 ## 구성 파일
 
@@ -19,16 +19,15 @@
 2. Postman에서 **Import**를 선택하고 위의 Collection JSON과 Environment JSON을 각각
    가져온다.
 3. 환경을 `SubSync Local`로 선택한다.
-4. Supabase에서 발급받은 Access Token을 환경의 `access_token`에 입력한다.
-5. Collection의 **Run**을 선택한다.
-6. 모든 요청을 실행하면 Health, 현재 사용자 확인, 정상 Tutor 요청, 대화 이력 요청,
-   422 validation 요청을 순서대로 확인할 수 있다.
+4. Collection의 **Run**을 선택한다.
+5. 모든 요청을 실행하면 Health, 정상 Tutor 요청, 대화 이력 요청, 422 validation 요청을
+   순서대로 확인할 수 있다.
 
 ## 인증 토큰 사용
 
-`/api/v1/auth/me`와 `/api/v1/tutor/ask`는 인증이 필요하다. `SubSync Local` 환경의
-`access_token`에 Access Token을 입력하면 Collection의 사전 요청 스크립트가 다음 헤더를
-자동으로 추가한다.
+현재 `/api/v1/tutor/ask`에는 인증 dependency가 연결되어 있지 않으므로 토큰 없이도
+테스트된다. Supabase Auth 연동 후에는 `SubSync Local` 환경의 `access_token`에 Access
+Token을 입력하면 Collection의 사전 요청 스크립트가 다음 헤더를 자동으로 추가한다.
 
 ```http
 Authorization: Bearer <access_token>

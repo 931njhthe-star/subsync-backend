@@ -8,11 +8,10 @@
 
 ```text
 Extension
-  │ Supabase Auth session → Access Token
   │ video_id / timestamp / nearby subtitles / user question
   │ learner_signals (saved words, accuracy, response time)
   ▼
-FastAPI /api/v1/tutor/ask ── Bearer Token 검증 → authenticated user_id
+FastAPI /api/v1/tutor/ask
   ▼
 Context Builder ── 현재 시점 중심 자막 7줄, 최근 대화, 저장 단어
   ▼
@@ -117,14 +116,12 @@ GROQ_MODEL=openai/gpt-oss-20b
 응답에는 실제 선택된 `provider`, `model`, `usage`가 포함되므로 로컬에서 fallback 동작을
 확인할 수 있다.
 
-현재 `/api/v1/tutor/ask`와 `/api/v1/auth/me`에는 Supabase Access Token 인증 dependency가
-연결되어 있다. 다만 학습 데이터 repository가 아직 없으므로 Tutor가 사용하는
-`learner_signals`는 임시로 요청 본문에서 읽으며, conversation/message ID도 아직 영구
-저장되지 않는다. DB 연동 후에는 반드시 검증된 `user_id`로 학습 신호를 조회해야 한다.
+현재 저장소에는 인증/DB 계층이 아직 없으므로 `/api/v1/tutor/ask`는 인증 dependency를
+붙이지 않은 개발용 골격이며, 반환되는 conversation/message ID도 아직 영구 저장되지 않는다.
 
 ## 다음 단계
 
-1. `tutor_conversations`/`tutor_messages` 저장소 구현 및 `user_id`·RLS 연결
+1. `tutor_conversations`/`tutor_messages` 저장소 구현과 인증 연결
 2. 단어별 quiz event 및 응답 시간 수집
 3. Gemini 응답 품질 평가: feedback, latency, 답변 길이, 문맥 일치율
 4. 오답/느린 응답이 반복되는 표현을 `weak_terms`로 만들어 튜터 연습 문제에 연결

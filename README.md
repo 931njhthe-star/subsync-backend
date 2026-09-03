@@ -5,7 +5,7 @@ Chrome Extension과 Streamlit 대시보드에 REST API를 제공하며, 사용�
 
 ## 주요 기능
 
-- **인증 및 사용자 관리**: Supabase Auth Google 로그인 연동, Access Token 검증, 사용자 식별
+- **인증 및 사용자 관리**: 회원가입, 로그인, JWT 기반 인증, 학습 프로필 관리
 - **영어 단어 학습**: 자막 단어 Hover 빠른 조회, Click 상세 조회, 단어장 저장 및 목록 조회
 - **Video Tutor**: 영상 자막과 재생 시점을 문맥으로 활용하는 Gemini/Groq 기반 질의응답 및 피드백 수집
 - **학습 기록**: 시청 이력, 저장 단어, 단어 클릭, Tutor 대화 이력 기록
@@ -33,11 +33,10 @@ Chrome Extension / Streamlit Dashboard
 ```text
 subsync-backend/
 ├── app/
-│   ├── api/                 # HTTP API 라우터 및 공통 dependency
+│   ├── api/                 # HTTP API 라우터
 │   ├── cache/               # Redis 등 캐시 연동
 │   ├── core/
-│   │   ├── config.py        # 환경별 설정 로드
-│   │   └── security.py      # Supabase Access Token 검증
+│   │   └── config.py        # 환경별 설정 로드
 │   ├── db/                  # DB 연결 및 저장소 계층
 │   ├── models/              # DB 모델
 │   ├── schemas/             # Pydantic 요청·응답 모델
@@ -53,9 +52,7 @@ subsync-backend/
 │   ├── db_schema.sql        # Supabase PostgreSQL 스키마
 │   └── subsync-architecture-guide.md
 ├── tests/
-│   ├── test_auth.py         # 인증·보호 API 테스트
-│   ├── test_health.py       # 헬스체크 테스트
-│   └── test_tutor.py        # Tutor API 테스트
+│   └── test_health.py       # 헬스체크 테스트
 ├── .python-version          # uv가 사용할 Python 버전
 ├── pyproject.toml           # uv 프로젝트·의존성 설정
 └── uv.lock                  # uv가 생성·관리하는 고정 의존성 잠금 파일
@@ -68,9 +65,9 @@ subsync-backend/
 ```text
 app/
 ├── api/
-│   ├── deps.py              # Supabase 인증 공통 의존성
+│   ├── deps.py              # 인증·DB 공통 의존성
 │   └── v1/
-│       ├── auth.py          # /auth/me
+│       ├── auth.py          # /auth
 │       ├── dictionary.py    # /dict/hover, /dict/detail
 │       ├── words.py         # /words
 │       ├── tutor.py         # /tutor
@@ -86,7 +83,7 @@ app/
 │   └── redis_client.py
 ├── core/
 │   ├── config.py
-│   └── security.py          # Supabase JWT 검증
+│   └── security.py          # JWT·비밀번호 해싱
 ├── data/
 │   └── base_dictionary.json # 빠른 단어 조회용 정적 사전
 ├── db/
@@ -130,11 +127,6 @@ uv run pytest
 ENV=development
 SUPABASE_URL=
 SUPABASE_KEY=
-SUPABASE_JWT_AUDIENCE=authenticated
-SUPABASE_JWT_ISSUER=
-SUPABASE_AUTH_VERIFICATION_MODE=auto
-SUPABASE_JWKS_CACHE_SECONDS=600
-SUPABASE_AUTH_TIMEOUT_SECONDS=5
 REDIS_URL=
 LLM_PROVIDER=stub
 GEMINI_API_KEY=
@@ -147,6 +139,7 @@ GROQ_MODEL=openai/gpt-oss-20b
 GROQ_TIMEOUT_SECONDS=20
 GROQ_DAILY_TOKEN_LIMIT=180000
 GROQ_MINUTE_TOKEN_LIMIT=7000
+JWT_SECRET_KEY=
 ```
 
 Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 없이도 문맥/프로필/API
@@ -170,7 +163,6 @@ fallback 규칙은
 - [시스템 아키텍처](docs/architecture.md)
 - [API 명세](docs/api_spec.md)
 - [Supabase DB 스키마](docs/db_schema.sql)
-- [Postman API 테스트](postman/README.md)
 - [레포지토리·폴더 구조 설계](docs/subsync-architecture-guide.md)
 
 ## 개발 원칙

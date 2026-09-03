@@ -3,7 +3,7 @@
     "_postman_id": "8d45be32-7f4a-4f0e-a8d7-2ad5f8a0c901",
     "name": "SubSync Backend API",
     "description": {
-      "content": "현재 구현된 SubSync FastAPI 라우트에 대한 회귀 테스트 모음입니다.\n\n- 기본 URL은 {{base_url}} 변수로 관리합니다.\n- /api/v1/auth/me와 /api/v1/tutor/ask는 유효한 Supabase Access Token이 필요합니다.\n- 환경 변수의 access_token을 입력하면 보호 API 요청에 Bearer 토큰이 자동으로 추가됩니다.",
+      "content": "현재 구현된 SubSync FastAPI 라우트에 대한 회귀 테스트 모음입니다.\n\n- 기본 URL은 {{base_url}} 변수로 관리합니다.\n- 현재 tutor/ask는 인증 dependency가 연결되지 않았으므로 토큰 없이 실행됩니다.\n- Supabase Auth 연동 후에는 환경 변수의 access_token을 입력하면 요청에 Bearer 토큰이 자동으로 추가됩니다.",
       "type": "text/markdown"
     },
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -92,41 +92,7 @@
       ]
     },
     {
-      "name": "02. Auth",
-      "item": [
-        {
-          "name": "Get current user",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/auth/me",
-            "description": "Supabase Access Token이 가리키는 현재 사용자를 확인합니다. access_token 환경변수에 유효한 토큰이 있어야 합니다."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('상태 코드는 200이다', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "const body = pm.response.json();",
-                  "pm.test('사용자 식별 정보가 존재한다', function () {",
-                  "    pm.expect(body.user_id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(body.role).to.be.a('string').and.not.empty;",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "03. Video Tutor",
+      "name": "02. Video Tutor",
       "item": [
         {
           "name": "Ask tutor - 개인화 답변",
@@ -255,7 +221,7 @@
       ]
     },
     {
-      "name": "04. Validation",
+      "name": "03. Validation",
       "item": [
         {
           "name": "Tutor ask - 음수 timestamp 거부",
