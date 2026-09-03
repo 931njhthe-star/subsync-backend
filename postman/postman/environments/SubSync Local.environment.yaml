@@ -1,0 +1,12 @@
+name: SubSync Local
+values:
+  - key: base_url
+    value: 'http://127.0.0.1:8000'
+  - key: access_token
+    value: ''
+  - key: conversation_id
+    value: ''
+  - key: message_id
+    value: ''
+  - key: last_reply
+    value: ''

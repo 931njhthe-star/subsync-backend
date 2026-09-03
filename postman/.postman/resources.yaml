@@ -1,0 +1,13 @@
+# Use this workspace to collaborate
+workspace:
+  id: e95d6e90-73d9-43c4-8400-9313c3985f4f
+
+localResources:
+  collections:
+    - ../SubSync-API.postman_collection.json
+  environments:
+    - ../SubSync-Local.postman_environment.json
+
+cloudResources:
+  collections:
+    ../postman/collections/SubSync Backend API: 20e44a5e-93a3-4bb0-90b5-7836f08270b7

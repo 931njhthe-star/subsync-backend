@@ -1,0 +1,27 @@
+$kind: http-request
+description: 필수 필드 video_id 누락 시 요청이 거부되는지 확인합니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "timestamp": 10,
+      "user_message": "video_id가 없습니다."
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('상태 코드는 422이다', function () {
+          pm.response.to.have.status(422);
+      });
+
+      const body = pm.response.json();
+      pm.test('video_id 필수 오류를 반환한다', function () {
+          const locations = body.detail.map(function (item) { return item.loc.join('.'); });
+          pm.expect(locations.some(function (location) { return location.includes('video_id'); })).to.eql(true);
+      });
+    language: text/javascript
+order: 2000

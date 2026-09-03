@@ -1,0 +1,90 @@
+$kind: http-request
+description: 영상 자막 문맥과 학습자 신호를 이용해 Tutor 답변을 생성합니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "video_id": "{{video_id}}",
+      "timestamp": {{timestamp}},
+      "user_message": "be honest with는 어떤 뜻인가요?",
+      "recent_subtitles": [
+        {
+          "time": 150.0,
+          "en": "I know it sounds crazy.",
+          "ko": "말도 안 되게 들리겠지만요."
+        },
+        {
+          "time": 156.4,
+          "en": "I want to be honest with you.",
+          "ko": "솔직하게 말씀드리고 싶어요."
+        }
+      ],
+      "learner_signals": {
+        "saved_words": [
+          { "word": "honest" }
+        ],
+        "quiz_accuracy": 0.72,
+        "average_response_time_ms": 7500,
+        "recent_quiz_accuracy": 0.8,
+        "recent_response_time_ms": 6200,
+        "quiz_attempts": 6
+      },
+      "conversation_history": [],
+      "focus_word": "honest"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('상태 코드는 200이다', function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test('응답은 JSON이다', function () {
+          pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json');
+      });
+
+      const body = pm.response.json();
+
+      pm.test('필수 답변 필드가 존재한다', function () {
+          ['conversation_id', 'message_id', 'reply', 'suggested_questions', 'provider', 'model', 'usage', 'learner_level', 'tutor_difficulty', 'profile_confidence', 'context_subtitle_count'].forEach(function (key) {
+              pm.expect(body, `필드 누락: ${key}`).to.have.property(key);
+          });
+      });
+
+      pm.test('답변 본문이 비어 있지 않다', function () {
+          pm.expect(body.reply).to.be.a('string').and.not.empty;
+      });
+
+      pm.test('후속 질문은 최대 3개다', function () {
+          pm.expect(body.suggested_questions).to.be.an('array');
+          pm.expect(body.suggested_questions.length).to.be.at.most(3);
+      });
+
+      pm.test('provider가 허용된 값이다', function () {
+          pm.expect(['gemini', 'groq', 'stub']).to.include(body.provider);
+      });
+
+      pm.test('사용량 값이 0 이상이다', function () {
+          pm.expect(body.usage.input_tokens).to.be.at.least(0);
+          pm.expect(body.usage.output_tokens).to.be.at.least(0);
+          pm.expect(body.usage.total_tokens).to.be.at.least(0);
+      });
+
+      pm.test('학습자 수준과 Tutor 난이도가 허용된 값이다', function () {
+          pm.expect(['A1', 'A2', 'B1', 'B2', 'C1']).to.include(body.learner_level);
+          pm.expect(['foundational', 'guided', 'conversational', 'nuanced', 'challenge']).to.include(body.tutor_difficulty);
+      });
+
+      pm.test('신뢰도는 0과 1 사이이다', function () {
+          pm.expect(body.profile_confidence).to.be.within(0, 1);
+      });
+
+      pm.environment.set('conversation_id', body.conversation_id);
+      pm.environment.set('message_id', body.message_id);
+      pm.environment.set('last_reply', body.reply);
+    language: text/javascript
+order: 1000

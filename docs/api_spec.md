@@ -1,31 +1,173 @@
-# SubSync REST API 명세서
+# SubSync API 공통 명세서
 
-현재 저장소에 실제로 등록된 FastAPI 라우트와 Pydantic 스키마를 기준으로 작성한 문서다.
+이 문서는 SubSync 백엔드 API에서 모든 도메인이 공통으로 사용하는 접속 정보,
+요청·응답 형식, 인증, 오류, 보안 규칙을 정의한다.
 
-## 공통 정보
+도메인별 API 명세서는 별도 문서로 관리한다.
 
-- 로컬 Base URL: `http://127.0.0.1:8000`
-- API v1 Base URL: `http://127.0.0.1:8000/api/v1`
-- 요청/응답 형식: `application/json; charset=utf-8`
-- Swagger UI: `http://127.0.0.1:8000/docs`
-- 현재 Video Tutor API에는 인증 dependency가 연결되어 있지 않다. 인증 연동 전까지는
-  개발용 API로 사용한다.
+- [Video Tutor API 명세서](./tutor_api_spec.md)
 
-## 현재 구현된 엔드포인트
+실제 구현 여부는 각 도메인 문서의 상태 표기와 현재 FastAPI 소스 코드를 기준으로
+판단한다.
 
-| Method | Path | 인증 | 설명 |
-| --- | --- | --- | --- |
-| `GET` | `/health` | 불필요 | 서버 상태 확인 |
-| `POST` | `/api/v1/tutor/ask` | 현재 불필요 | 영상 자막 문맥 기반 Tutor 질문 |
+## 1. 구현 상태 표기
 
----
+| 표기 | 의미 |
+| --- | --- |
+| `IMPLEMENTED` | 현재 FastAPI 소스에 등록되어 테스트 가능한 API |
+| `PROPOSED` | 요구사항 충족을 위해 추가 개발할 API 계약 |
+| `DEPENDENCY` | 다른 도메인 기능을 위해 필요한 연동 API |
 
-## 1. Health Check
+문서에 정의된 `PROPOSED` API는 라우터가 실제로 등록되기 전까지 프론트엔드에서
+호출하지 않는다.
+
+## 2. 접속 정보와 API 버전
+
+### 2.1 기본 URL
+
+```text
+로컬:    http://127.0.0.1:8000
+Swagger: http://127.0.0.1:8000/docs
+OpenAPI: http://127.0.0.1:8000/openapi.json
+```
+
+실제 실행 포트나 배포 주소가 달라지면 `base_url`만 변경한다.
+
+### 2.2 버전 경로
+
+현재 도메인 API의 기본 경로는 다음과 같다.
+
+```text
+API v1: http://127.0.0.1:8000/api/v1
+```
+
+`v1`은 API 계약의 첫 번째 버전이다. 기존 클라이언트와의 호환성을 유지하면서
+요청·응답 구조를 크게 변경해야 할 때 `/api/v2`를 추가할 수 있다.
+
+- 선택 필드 추가처럼 하위 호환이 가능한 변경은 기존 버전에 반영한다.
+- 필드 삭제·이름 변경, 타입 변경, 요청 구조 변경처럼 기존 클라이언트를 깨뜨리는
+  변경은 새 버전으로 분리한다.
+- `/health`는 서버 상태 확인용 공통 엔드포인트로 현재 버전 경로 밖에 둔다.
+
+## 3. 공통 요청·응답 규칙
+
+### 3.1 헤더
+
+JSON을 사용하는 요청은 다음 헤더를 사용한다.
+
+```http
+Content-Type: application/json
+Accept: application/json
+```
+
+인증이 필요한 API는 `Authorization` 헤더를 추가한다.
+
+```http
+Authorization: Bearer <supabase_access_token>
+```
+
+### 3.2 데이터 형식
+
+- 문자 인코딩은 UTF-8이다.
+- 요청·응답 본문은 기본적으로 JSON이다.
+- 모든 ID는 JSON에서 문자열로 표현한다.
+- 서버가 생성하는 시각은 ISO 8601 형식의 UTC 시각을 사용한다. 예: `2026-09-03T12:00:00Z`
+- `null`은 값이 없거나 아직 생성되지 않은 상태를 의미한다.
+- 페이지네이션이 필요한 목록 API는 도메인 문서에서 `limit`, `cursor` 등의 세부 계약을
+  별도로 정의한다.
+
+### 3.3 응답 구조
+
+성공 응답은 각 도메인의 리소스 구조를 그대로 반환하며, 모든 API에 임의의 공통
+`data` 래퍼를 강제하지 않는다. 오류 응답만 아래의 공통 형식을 사용한다.
+
+## 4. 인증과 세션
+
+### 4.1 인증 방식
+
+Supabase Auth가 Google 로그인과 Access/Refresh Token 발급·갱신을 담당한다.
+백엔드는 인증이 필요한 요청에서 다음 절차를 수행한다.
+
+1. `Authorization: Bearer <access_token>` 헤더를 확인한다.
+2. Supabase JWT의 서명과 만료 시간을 검증한다.
+3. 검증된 토큰의 `sub`를 사용자 ID로 사용한다.
+4. 요청 본문에 전달된 `user_id`는 소유권 판단에 사용하지 않는다.
+
+Refresh Token 원문을 백엔드 API 요청이나 일반 로그에 포함하지 않는다. 토큰 갱신은
+Supabase 클라이언트의 세션 관리 흐름을 사용한다.
+
+### 4.2 공개·보호 API
+
+| 구분 | 인증 헤더 | 예시 |
+| --- | --- | --- |
+| 공개 API | 불필요 | `GET /health` |
+| 보호 API | 필요 | 도메인별 사용자 데이터 조회·생성 API |
+
+현재 구현 상태에서 인증 dependency가 아직 연결되지 않은 API는 해당 도메인 문서에
+명시한다. 인증 연동 후에는 보호 API에 Bearer Token 검증을 적용한다.
+
+## 5. 공통 오류 응답
+
+### 5.1 일반 오류
+
+```json
+{
+  "detail": "오류 설명"
+}
+```
+
+### 5.2 요청 검증 오류
+
+FastAPI와 Pydantic의 요청 검증 오류는 다음 형태를 사용한다.
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "field_name"],
+      "msg": "Input should be greater than or equal to 0",
+      "type": "greater_than_equal"
+    }
+  ]
+}
+```
+
+### 5.3 주요 상태 코드
+
+| 상태 코드 | 의미 |
+| --- | --- |
+| `200` | 정상 처리 |
+| `201` | 리소스 생성 완료 |
+| `204` | 응답 본문 없는 정상 처리 |
+| `400` | 형식은 맞지만 처리할 수 없는 요청 |
+| `401` | Access Token 없음·만료·변조 |
+| `403` | 인증은 되었지만 권한 없음 |
+| `404` | 요청한 리소스 없음 |
+| `409` | 현재 리소스 상태와 요청이 충돌함 |
+| `422` | 요청 DTO 검증 실패 |
+| `429` | 요청 빈도 또는 외부 서비스 사용량 제한 초과 |
+| `503` | 외부 인증·DB·LLM 등 의존 서비스 일시 장애 |
+
+## 6. 공통 보안 규칙
+
+1. 사용자 식별자는 클라이언트가 보낸 `user_id`가 아니라 검증된 JWT의 `sub`를 사용한다.
+2. 사용자별 데이터에는 `auth.uid() = user_id` 형태의 Supabase RLS 정책을 적용한다.
+3. `service_role` 키는 일반 사용자 요청 처리에 사용하지 않는다.
+4. Access Token과 Refresh Token 원문을 DB, 로그, 응답 URL에 저장하지 않는다.
+5. 자막, 사용자 질문, 외부 연동 데이터는 신뢰할 수 없는 입력으로 취급한다.
+6. 사용자 입력을 SQL, HTML, 로그 포맷에 직접 삽입하지 않고 각 계층의 안전한 인코딩·바인딩
+   방식을 사용한다.
+
+## 7. Health Check — `IMPLEMENTED`
 
 ### `GET /health`
 
-서버 프로세스가 요청을 받을 수 있는지 확인한다. 외부 LLM, DB, Redis 상태까지 검사하지는
-않는다.
+서버 프로세스가 HTTP 요청을 받을 수 있는지만 확인한다. Supabase, Redis, LLM과 같은
+외부 의존 서비스의 연결 상태까지 검사하지 않는다.
+
+### 인증
+
+불필요하다.
 
 ### 응답 `200 OK`
 
@@ -35,288 +177,10 @@
 }
 ```
 
----
+## 8. 문서 관리 원칙
 
-## 2. Video Tutor 질문
-
-### `POST /api/v1/tutor/ask`
-
-현재 영상 시점의 자막과 사용자의 학습 행동 데이터를 이용해 Tutor 답변을 생성한다.
-
-### 요청 헤더
-
-```http
-Content-Type: application/json
-```
-
-### 요청 본문
-
-| 필드 | 타입 | 필수 | 제한/기본값 |
-| --- | --- | --- | --- |
-| `video_id` | string | 예 | 1~50자 |
-| `timestamp` | number | 예 | 0 이상, 초 단위 |
-| `user_message` | string | 예 | 1~2,000자 |
-| `recent_subtitles` | array | 아니오 | 최대 100개, 기본값 `[]` |
-| `learner_signals` | object | 아니오 | 기본값 `{}` |
-| `conversation_history` | array | 아니오 | 최대 10개, 기본값 `[]` |
-| `focus_word` | string/null | 아니오 | 최대 100자, 기본값 `null` |
-
-#### `recent_subtitles` 원소
-
-| 필드 | 타입 | 필수 | 제한/기본값 |
-| --- | --- | --- | --- |
-| `time` | number | 예 | 0 이상, 초 단위 |
-| `en` | string | 예 | 1~500자 |
-| `ko` | string/null | 아니오 | 최대 500자, 기본값 `null` |
-
-#### `learner_signals`
-
-| 필드 | 타입 | 필수 | 제한/기본값 |
-| --- | --- | --- | --- |
-| `saved_words` | array | 아니오 | 최대 500개, 기본값 `[]` |
-| `saved_word_count` | integer/null | 아니오 | 0~100,000, 기본값 `null` |
-| `quiz_accuracy` | number/null | 아니오 | 0~1, 기본값 `null` |
-| `average_response_time_ms` | number/null | 아니오 | 0~300,000, 기본값 `null` |
-| `recent_quiz_accuracy` | number/null | 아니오 | 0~1, 기본값 `null` |
-| `recent_response_time_ms` | number/null | 아니오 | 0~300,000, 기본값 `null` |
-| `quiz_attempts` | integer | 아니오 | 0~100,000, 기본값 `0` |
-
-`saved_words`의 원소는 다음 형식이다.
-
-```json
-{
-  "word": "honest"
-}
-```
-
-#### `conversation_history` 원소
-
-```json
-{
-  "role": "user",
-  "message": "이 표현을 다른 상황에서도 사용할 수 있나요?"
-}
-```
-
-`role`은 `user` 또는 `tutor`만 허용한다.
-
-### 요청 예시
-
-```json
-{
-  "video_id": "arj7oStGLkU",
-  "timestamp": 156.4,
-  "user_message": "방금 나온 'be honest with'는 언제 주로 쓰나요?",
-  "recent_subtitles": [
-    {
-      "time": 150.0,
-      "en": "I know it sounds crazy.",
-      "ko": "말도 안 되게 들리겠지만요."
-    },
-    {
-      "time": 156.4,
-      "en": "I want to be honest with you.",
-      "ko": "솔직하게 말씀드리고 싶어요."
-    }
-  ],
-  "learner_signals": {
-    "saved_words": [
-      { "word": "honest" }
-    ],
-    "quiz_accuracy": 0.72,
-    "average_response_time_ms": 7500,
-    "quiz_attempts": 6
-  },
-  "conversation_history": [],
-  "focus_word": "honest"
-}
-```
-
-### 내부 처리
-
-1. `timestamp` 주변의 자막을 최대 7줄로 구성한다.
-2. 저장 단어, 퀴즈 정답률, 평균 응답 시간을 이용해 내부 CEFR 수준을 추론한다.
-3. 현재 기준 가중치는 정답률 55%, 응답 시간 25%, 저장 단어 수 20%다.
-4. 데이터가 부족하면 A2/`guided`를 기본값으로 사용하고, 퀴즈 시도 횟수로 confidence를
-   보정한다.
-5. 설정된 LLM provider를 순서대로 호출한다.
-
-Provider 순서는 `LLM_PROVIDER` 값에 따라 다음과 같다.
-
-| `LLM_PROVIDER` | 호출 순서 |
-| --- | --- |
-| `stub` | Rule-based stub |
-| `gemini` | Gemini → Groq → stub |
-| `auto` | Gemini → Groq → stub |
-| `groq` | Groq → Gemini → stub |
-
-API key가 없는 provider는 건너뛴다. provider가 `429`를 반환하거나 로컬 token guard에
-도달하면 다음 provider를 시도한다. 모든 외부 provider가 실패하면 stub 응답을 반환한다.
-
-### 응답 `200 OK`
-
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `conversation_id` | string | 현재 대화 식별자. 현재는 영구 저장하지 않는다. |
-| `message_id` | string | 현재 답변 식별자. 현재는 영구 저장하지 않는다. |
-| `reply` | string | Tutor 답변 |
-| `suggested_questions` | array[string] | 후속 질문 최대 3개 |
-| `provider` | string | 실제 답변에 사용된 provider: `gemini`, `groq`, `stub` |
-| `model` | string | 실제 사용 모델명 |
-| `usage` | object | provider 응답에서 정규화한 토큰 사용량 |
-| `learner_level` | string | `A1`, `A2`, `B1`, `B2`, `C1` |
-| `tutor_difficulty` | string | 내부 Tutor 난이도 |
-| `profile_confidence` | number | 0~1 사이의 수준 추론 신뢰도 |
-| `context_subtitle_count` | integer | 답변에 사용한 주변 자막 수 |
-
-`usage`는 다음 형식이다.
-
-```json
-{
-  "input_tokens": 642,
-  "output_tokens": 118,
-  "total_tokens": 760
-}
-```
-
-stub 응답은 실제 LLM token usage가 없으므로 usage 값이 0이다.
-
-### 응답 예시
-
-```json
-{
-  "conversation_id": "conv_49a1d",
-  "message_id": "msg_001",
-  "reply": "'be honest with'는 상대방에게 솔직하게 말하거나 진실을 숨기지 않을 때 사용해요. 이 자막에서는 '너에게 솔직해지고 싶다'는 의미입니다.",
-  "suggested_questions": [
-    "비슷한 다른 표현은 없나요?",
-    "예문을 더 보여줘"
-  ],
-  "provider": "groq",
-  "model": "openai/gpt-oss-20b",
-  "usage": {
-    "input_tokens": 642,
-    "output_tokens": 118,
-    "total_tokens": 760
-  },
-  "learner_level": "A2",
-  "tutor_difficulty": "guided",
-  "profile_confidence": 0.31,
-  "context_subtitle_count": 2
-}
-```
-
-### 유효성 검증 실패 `422 Unprocessable Entity`
-
-FastAPI 기본 validation 응답을 반환한다. 예를 들어 `timestamp`가 음수이거나 `en`이
-빈 문자열이면 요청이 거부된다.
-
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "timestamp"],
-      "msg": "Input should be greater than or equal to 0",
-      "type": "greater_than_equal"
-    }
-  ]
-}
-```
-
----
-
-## 3. LLM 환경변수
-
-환경변수는 서버 시작 시 읽는다. 값을 변경하면 서버를 재시작해야 한다.
-
-| 환경변수 | 기본값 | 설명 |
-| --- | --- | --- |
-| `LLM_PROVIDER` | `stub` | `stub`, `gemini`, `groq`, `auto` |
-| `GEMINI_API_KEY` | 빈 문자열 | Gemini API key |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini 모델명 |
-| `GEMINI_TIMEOUT_SECONDS` | `20` | Gemini 요청 timeout |
-| `GEMINI_DAILY_TOKEN_LIMIT` | `0` | 일일 로컬 guard, `0`이면 비활성화 |
-| `GEMINI_MINUTE_TOKEN_LIMIT` | `0` | 분당 로컬 guard, `0`이면 비활성화 |
-| `GROQ_API_KEY` | 빈 문자열 | Groq API key |
-| `GROQ_MODEL` | `openai/gpt-oss-20b` | Groq 모델명 |
-| `GROQ_TIMEOUT_SECONDS` | `20` | Groq 요청 timeout |
-| `GROQ_DAILY_TOKEN_LIMIT` | `180000` | 일일 로컬 guard |
-| `GROQ_MINUTE_TOKEN_LIMIT` | `7000` | 분당 로컬 guard |
-
-설정 예시:
-
-```dotenv
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_api_key
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=openai/gpt-oss-20b
-```
-
-Groq 및 Gemini 사용량은 현재 프로세스 메모리에 기록된다. 서버 재시작 또는 다중 인스턴스
-운영에서도 누적량을 유지하려면 `InMemoryUsageTracker`를 Redis/PostgreSQL 저장소로
-교체해야 한다.
-
----
-
-## 4. 로컬 호출 예시
-
-서버 실행:
-
-```powershell
-uv run uvicorn app.main:app --reload --port 8000 --env-file .env
-```
-
-PowerShell에서 요청:
-
-```powershell
-$body = @'
-{
-  "video_id": "arj7oStGLkU",
-  "timestamp": 156.4,
-  "user_message": "be honest with는 어떤 뜻인가요?",
-  "recent_subtitles": [
-    {
-      "time": 156.4,
-      "en": "I want to be honest with you.",
-      "ko": "솔직하게 말씀드리고 싶어요."
-    }
-  ],
-  "learner_signals": {
-    "quiz_accuracy": 0.72,
-    "average_response_time_ms": 7500,
-    "quiz_attempts": 6
-  }
-}
-'@
-
-Invoke-RestMethod `
-  -Uri 'http://127.0.0.1:8000/api/v1/tutor/ask' `
-  -Method Post `
-  -ContentType 'application/json' `
-  -Body $body
-```
-
-Gemini fallback을 확인하려면 Gemini의 로컬 한도를 낮춰 다음처럼 설정한다.
-
-```dotenv
-LLM_PROVIDER=gemini
-GEMINI_DAILY_TOKEN_LIMIT=1
-GROQ_API_KEY=your_groq_api_key
-```
-
-유효한 Groq key가 있고 서버를 재시작한 뒤 요청하면 응답의 `provider`가 `groq`인지
-확인할 수 있다.
-
----
-
-## 5. 미구현 예정 API
-
-아래 경로는 기획/설계 문서에만 존재하며 현재 FastAPI 앱에는 등록되어 있지 않다.
-
-- 인증: `/api/v1/auth/signup`, `/api/v1/auth/login`, `/api/v1/auth/me`
-- 사전: `/api/v1/dict/hover`, `/api/v1/dict/detail`
-- 단어장: `/api/v1/words/save`, `/api/v1/words/list`
-- Tutor 확장: `/api/v1/tutor/proactive`, `/api/v1/tutor/feedback`
-- 행동 로그: `/api/v1/logs/event`
-
-해당 기능을 구현할 때 이 문서의 현재 구현 섹션에 실제 스키마와 상태 코드를 추가한다.
+- 라우터에 실제 등록된 API는 `IMPLEMENTED`로 표시한다.
+- 요구사항에는 필요하지만 아직 구현되지 않은 API는 `PROPOSED`로 표시한다.
+- `PROPOSED` API를 구현하면 실제 Pydantic 스키마, 상태 코드, 응답 예시를 검증한 뒤
+  `IMPLEMENTED`로 변경한다.
+- 공통 규칙 변경 시 도메인 문서의 중복 설명도 함께 확인한다.
