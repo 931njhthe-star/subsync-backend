@@ -1,0 +1,9 @@
+[
+  {
+    "id": "fixture-user-001",
+    "email": "fixture@example.com",
+    "nickname": "Fixture User",
+    "level": "A2",
+    "saved_word_count": 14
+  }
+]

@@ -4,7 +4,7 @@
 수준에 따라 Tutor 답변 난이도를 조절하는 Video Tutor API를 정의한다.
 
 공통 접속 정보, 인증, 오류, 보안 규칙은 [API 공통 명세서](./api_spec.md)를 따른다.
-기획 요구사항의 AI Tutor 추출본은 [AI Tutor 요구사항 정리](./ai_tutor_requirements.md)를
+기획 요구사항의 AI Tutor 추출본은 [AI Tutor 요구사항 정리](../ai/ai_tutor_requirements.md)를
 참고한다.
 
 ## 1. 요구사항과 API 매핑

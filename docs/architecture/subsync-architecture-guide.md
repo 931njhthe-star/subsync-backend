@@ -182,7 +182,7 @@ subsync-backend/
 
 ## 4. 협업 워크플로우 (Day 1 시작 규칙)
 
-1. **API First**: 백엔드는 첫날 1시간 내에 `docs/api_spec.md`를 기반으로 가짜 Mock JSON을 반환하는 더미 API를 먼저 배포한다.
+1. **API First**: 백엔드는 첫날 1시간 내에 `docs/api/api_spec.md`를 기반으로 가짜 Mock JSON을 반환하는 더미 API를 먼저 배포한다.
 2. **독립 개발**: 프론트엔드는 Mock API를 바라보며 UI와 마우스 인터랙션을 막힘없이 개발한다.
 3. **CORS 전체 허용**: 로컬 개발 시 Chrome Extension에서 호출할 수 있도록 FastAPI `CORSMiddleware`에 `allow_origins=["*"]`를 설정한다.
 4. **Secret 격리**: API Key 및 DB 접속 정보는 `.env`에 두고 절대 Git에 올리지 않는다 (`.env.example`만 공유).

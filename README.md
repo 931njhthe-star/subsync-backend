@@ -47,14 +47,20 @@ subsync-backend/
 │   ├── components/
 │   └── app.py
 ├── docs/
-│   ├── api_spec.md          # API 공통 규칙
-│   ├── tutor_api_spec.md    # Video Tutor API 계약
-│   ├── ai_tutor_requirements.md # AI Tutor 요구사항 추출본
-│   ├── architecture.md      # 시스템 아키텍처
-│   ├── db_schema.sql        # Supabase PostgreSQL 스키마
-│   └── subsync-architecture-guide.md
+│   ├── onboarding.md       # 처음 참여하는 팀원의 실행·작업 안내
+│   ├── prompts/            # AI 작업 요청 템플릿
+│   ├── architecture/       # 시스템 구조·레포지토리 설계
+│   ├── api/                # 공통 API·도메인 API 계약
+│   ├── ai/                 # AI Tutor 요구사항·설계
+│   ├── database/           # Supabase 스키마·DB 문서
+│   └── README.md           # 문서 분류 및 읽는 순서
 ├── tests/
-│   └── test_health.py       # 헬스체크 테스트
+│   ├── fixtures/             # 담당자 간 공유 테스트 데이터
+│   ├── test_health.py        # 헬스체크 테스트
+│   └── test_tutor.py         # Tutor 테스트
+├── .github/
+│   ├── pull_request_template.md
+│   └── workflows/ci.yml      # PR 자동 테스트
 ├── .python-version          # uv가 사용할 Python 버전
 ├── pyproject.toml           # uv 프로젝트·의존성 설정
 └── uv.lock                  # uv가 생성·관리하는 고정 의존성 잠금 파일
@@ -62,7 +68,7 @@ subsync-backend/
 
 ## 확장 예정 구조
 
-기획서의 기능을 구현하면서 아래와 같이 세분화합니다. API 경로와 요청·응답 형식은 [API 명세](docs/api_spec.md)를 기준으로 관리합니다.
+기획서의 기능을 구현하면서 아래와 같이 세분화합니다. API 경로와 요청·응답 형식은 [API 명세](docs/api/api_spec.md)를 기준으로 관리합니다.
 
 ```text
 app/
@@ -159,20 +165,23 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 사용 중인 plan에 맞게 조정할 수 있습니다. 실제 provider 응답의 usage도 기록하고,
 `429` 응답 또는 로컬 quota 도달 시 다음 provider로 전환합니다. 상세한 프로필 추론 및
 fallback 규칙은
-[AI Tutor 기초 설계](docs/ai-tutor.md)를 참고하세요.
+[AI Tutor 기초 설계](docs/ai/ai-tutor.md)를 참고하세요.
 
 ## 문서
 
-- [시스템 아키텍처](docs/architecture.md)
-- [API 명세](docs/api_spec.md)
-- [Video Tutor API 명세](docs/tutor_api_spec.md)
-- [AI Tutor 요구사항](docs/ai_tutor_requirements.md)
-- [Supabase DB 스키마](docs/db_schema.sql)
-- [레포지토리·폴더 구조 설계](docs/subsync-architecture-guide.md)
+- [문서 인덱스](docs/README.md)
+- [온보딩 안내](docs/onboarding.md)
+- [AI 작업 프롬프트](docs/prompts/feature-task.md)
+- [시스템 아키텍처](docs/architecture/architecture.md)
+- [API 명세](docs/api/api_spec.md)
+- [Video Tutor API 명세](docs/api/tutor_api_spec.md)
+- [AI Tutor 요구사항](docs/ai/ai_tutor_requirements.md)
+- [Supabase DB 스키마](docs/database/db_schema.sql)
+- [레포지토리·폴더 구조 설계](docs/architecture/subsync-architecture-guide.md)
 
 ## 개발 원칙
 
-- API 변경은 구현 전에 `docs/api_spec.md`를 먼저 갱신합니다.
+- API 변경은 구현 전에 `docs/api/api_spec.md`를 먼저 갱신합니다.
 - 요청·응답 검증은 `schemas/`, 도메인 로직은 `services/`, 외부 연동은 `ai/`, `db/`, `cache/`에 둡니다.
 - 의존성 추가·갱신은 `uv add` 또는 `uv add --dev`로 수행하고, 생성된 `uv.lock`은 함께 커밋합니다.
 - 민감 정보와 로컬 데이터는 `.gitignore`로 제외합니다.
