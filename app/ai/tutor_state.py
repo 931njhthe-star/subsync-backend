@@ -9,9 +9,12 @@ HTTP 라우터의 계약이 바뀌지 않도록 한다.
 from __future__ import annotations
 
 import re
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
+from typing import Callable
 from uuid import uuid4
 
 from app.ai.context_builder import (
@@ -144,15 +147,51 @@ class InMemoryTutorState:
     repository를 주입해야 한다.
     """
 
-    def __init__(self, *, proactive_cooldown_seconds: float = 45.0) -> None:
-        """기본 설정과 선제 질문 cooldown을 초기화한다."""
+    def __init__(
+        self,
+        *,
+        proactive_cooldown_seconds: float = 45.0,
+        requests_per_minute: int = 30,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """기본 설정, 선제 질문 cooldown, 요청 제한을 초기화한다.
+
+        ``clock``을 주입할 수 있게 해 실제 시간을 기다리지 않고 rate limit의
+        경계값을 테스트할 수 있다. 운영 환경에서는 이 메모리 제한을 Redis 기반
+        제한기로 교체하되, 호출하는 라우터 계약은 유지한다.
+        """
 
         self.proactive_cooldown_seconds = max(proactive_cooldown_seconds, 0.0)
+        self.requests_per_minute = max(requests_per_minute, 0)
+        self._clock = clock
         self._settings: dict[str, TutorSettingsState] = {}
         self._conversations: dict[tuple[str, str], _ConversationState] = {}
         self._proactive: dict[tuple[str, str], _ProactiveState] = {}
         self._feedback: dict[tuple[str, str], TutorFeedbackRecord] = {}
+        self._request_timestamps: dict[str, deque[float]] = {}
         self._lock = RLock()
+
+    def allow_request(self, actor_id: str) -> bool:
+        """분당 Tutor 질문 제한 안에 있으면 요청을 소비하고 ``True``를 반환한다.
+
+        반환값이 ``False``이면 호출자가 `429 Too Many Requests`를 반환해야 한다.
+        사용자 로그인 전에는 actor가 ``anonymous`` 하나이므로 로컬 개발용 보호
+        장치로 동작하고, Auth 연결 후에는 JWT의 `sub`별로 분리된다.
+        """
+
+        if self.requests_per_minute <= 0:
+            return True
+
+        now = self._clock()
+        with self._lock:
+            timestamps = self._request_timestamps.setdefault(actor_id, deque())
+            cutoff = now - 60.0
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            if len(timestamps) >= self.requests_per_minute:
+                return False
+            timestamps.append(now)
+            return True
 
     def get_settings(self, actor_id: str) -> TutorSettingsState:
         """사용자 설정을 조회하고, 최초 조회 시 Tutor ON 기본값을 만든다."""
@@ -200,6 +239,21 @@ class InMemoryTutorState:
             if limit <= 0:
                 return ()
             return tuple(state.turns[-max(limit, 0) :])
+
+    def get_conversation_video_id(
+        self,
+        actor_id: str,
+        conversation_id: str,
+    ) -> str | None:
+        """사용자 대화의 원래 영상 ID를 반환하거나, 대화가 없으면 ``None``을 반환한다.
+
+        한 대화 ID를 다른 영상에 재사용하면 문맥이 섞일 수 있으므로 API 계층에서
+        이어받는 요청의 ``video_id``를 검증하는 데 사용한다.
+        """
+
+        with self._lock:
+            state = self._conversations.get((actor_id, conversation_id))
+            return state.video_id if state is not None else None
 
     def record_exchange(
         self,
@@ -362,6 +416,7 @@ class InMemoryTutorState:
             self._conversations.clear()
             self._proactive.clear()
             self._feedback.clear()
+            self._request_timestamps.clear()
 
 
 def _pick_focus_word(english: str) -> str | None:

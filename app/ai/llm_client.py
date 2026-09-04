@@ -136,7 +136,7 @@ class GeminiClient:
     """Google Gemini GenerateContent REST API 클라이언트."""
 
     api_key: str
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.6-flash"
     timeout_seconds: float = 20.0
     name: str = "gemini"
 
@@ -173,6 +173,17 @@ class GeminiClient:
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent"
         )
+        generation_config = {
+            "temperature": 0.35,
+            "maxOutputTokens": 800,
+            # Gemini 3는 기본 thinking 수준이 높아 긴 Tutor 문맥에서 답변 JSON의
+            # 출력 공간을 잠식할 수 있다. 간단한 학습 대화는 low로 제한해 지연과
+            # 잘린 JSON 응답을 줄인다. Gemini 2.x에는 이 필드를 보내지 않는다.
+            "responseMimeType": "application/json",
+        }
+        if self.model.startswith("gemini-3"):
+            generation_config["thinkingConfig"] = {"thinkingLevel": "low"}
+
         payload = {
             "system_instruction": {
                 "parts": [{"text": prompt.system_instruction}],
@@ -183,13 +194,7 @@ class GeminiClient:
                     "parts": [{"text": prompt.user_prompt}],
                 }
             ],
-            "generationConfig": {
-                "temperature": 0.35,
-                "maxOutputTokens": 800,
-                # gemini-2.5-flash를 포함한 넓은 모델 호환성을 위해 MIME type만
-                # 지정한다. 실제 shape은 시스템 프롬프트와 tutor_service가 검증한다.
-                "responseMimeType": "application/json",
-            },
+            "generationConfig": generation_config,
         }
 
         try:

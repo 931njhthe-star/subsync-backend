@@ -21,7 +21,7 @@ class Settings:
     # gemini/auto: Gemini -> Groq, groq: Groq -> Gemini 순서로 시도한다.
     llm_provider: str = os.getenv("LLM_PROVIDER", "stub").strip().lower()
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
     gemini_daily_token_limit: int = int(
         os.getenv("GEMINI_DAILY_TOKEN_LIMIT", "0")
@@ -42,6 +42,11 @@ class Settings:
     # 선제 질문은 재생 이벤트마다 LLM을 호출하지 않도록 영상 시점 기준 cooldown을 둔다.
     tutor_proactive_cooldown_seconds: float = float(
         os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "45")
+    )
+    # 로그인 연동 전에는 anonymous actor별로, 운영 전환 후에는 사용자별로
+    # 분당 Tutor 질문 수를 제한해 실수나 비용 폭증을 막는다. 0은 제한 없음이다.
+    tutor_requests_per_minute: int = int(
+        os.getenv("TUTOR_REQUESTS_PER_MINUTE", "30")
     )
 
 # 라우터 dependency가 공유하는 프로세스 단위 설정 인스턴스다.

@@ -67,7 +67,15 @@ Accept: application/json
 Authorization: Bearer <supabase_access_token>
 ```
 
-### 3.2 데이터 형식
+### 3.2 로컬 Chrome Extension CORS
+
+Chrome Extension의 content script는 실행 중인 YouTube 페이지에서 동작하므로 로컬 FastAPI
+호출의 origin이 `https://www.youtube.com`으로 보일 수 있다. JSON 요청 전에 발생하는
+`OPTIONS` preflight를 위해 개발 서버는 `chrome-extension://<extension_id>`,
+`https://www.youtube.com`, `localhost`/`127.0.0.1`의 로컬 포트를 허용한다. 운영 배포에서는
+실제 Extension origin과 대시보드 origin만 별도로 허용하고, 임의의 origin을 열지 않는다.
+
+### 3.3 데이터 형식
 
 - 문자 인코딩은 UTF-8이다.
 - 요청·응답 본문은 기본적으로 JSON이다.
@@ -77,7 +85,7 @@ Authorization: Bearer <supabase_access_token>
 - 페이지네이션이 필요한 목록 API는 도메인 문서에서 `limit`, `cursor` 등의 세부 계약을
   별도로 정의한다.
 
-### 3.3 응답 구조
+### 3.4 응답 구조
 
 성공 응답은 각 도메인의 리소스 구조를 그대로 반환하며, 모든 API에 임의의 공통
 `data` 래퍼를 강제하지 않는다. 오류 응답만 아래의 공통 형식을 사용한다.

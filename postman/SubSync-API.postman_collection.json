@@ -312,6 +312,90 @@
             }
           ],
           "response": []
+        },
+        {
+          "name": "Tutor ask - 존재하지 않는 conversation_id 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": {{timestamp}},\n  \"user_message\": \"없는 대화를 이어갈 수 있나요?\",\n  \"conversation_id\": \"conv_missing_for_postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/tutor/ask",
+            "description": "존재하지 않는 conversation_id를 조용히 새 대화로 만들지 않고 404로 거부하는지 확인합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 코드는 404이다', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('대화 없음 오류를 반환한다', function () {",
+                  "    pm.expect(body.detail).to.eql('이어갈 Tutor 대화를 찾을 수 없습니다.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Tutor ask - 다른 영상 conversation_id 재사용 거부",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"video_id\": \"postman-different-video\",\n  \"timestamp\": {{timestamp}},\n  \"user_message\": \"다른 영상에서도 이어서 질문할게요.\",\n  \"conversation_id\": \"{{conversation_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/tutor/ask",
+            "description": "앞선 '개인화 답변' 요청으로 conversation_id 변수를 먼저 저장한 뒤 실행합니다. 다른 영상 ID로 대화를 재사용하면 409를 반환해야 합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('상태 코드는 409이다', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('영상 불일치 오류를 반환한다', function () {",
+                  "    pm.expect(body.detail).to.eql('Tutor 대화와 영상 ID가 일치하지 않습니다.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
         }
       ]
     }

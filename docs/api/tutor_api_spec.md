@@ -235,6 +235,9 @@ provider가 usage를 제공하지 않는 경우 값이 추정되거나 `0`일 �
 tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 재시작하면 누적 사용량이
 초기화된다.
 
+Gemini/Groq provider의 한 요청 최대 출력은 800 token이며, 로컬 quota guard는 이 값을
+예약 토큰으로 사용한다.
+
 ### 4.7 응답 예시
 
 ```json
@@ -275,8 +278,9 @@ tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 
 | --- | --- |
 | `422` | 필수 필드 누락, 길이 제한 초과, 음수 timestamp, 허용 범위를 벗어난 학습 신호 |
 | `401` | Supabase Auth 연동 후 Access Token 없음·만료·변조 |
-| `409` | Tutor OFF 정책에서 수동 질문을 차단하도록 구현한 경우 |
-| `429` | 서버 요청 빈도 제한을 초과한 경우 |
+| `404` | 존재하지 않는 `conversation_id`로 대화를 이어가려는 경우 |
+| `409` | Tutor OFF 정책에서 수동 질문을 차단하거나, 다른 영상에 연결된 `conversation_id`를 재사용한 경우 |
+| `429` | 사용자(로그인 전에는 `anonymous`)별 Tutor 요청 빈도 제한을 초과한 경우 |
 | `503` | 인증·DB 등 필수 의존 서비스 장애. 현재 외부 LLM 실패는 `stub`으로 처리 |
 
 공통 오류 응답 형식은 다음과 같다.
@@ -448,6 +452,19 @@ Authorization: Bearer <supabase_access_token>
 - 동일 표현을 이미 표시했으면 `already_seen`을 반환한다.
 - 문맥이 부족하면 LLM을 호출하지 않고 `insufficient_context`를 반환할 수 있다.
 - cooldown과 표시 이력은 Redis 또는 사용자별 저장소에 기록한다.
+
+### 6.7 Tutor 요청 빈도 제한
+
+`TUTOR_REQUESTS_PER_MINUTE` 환경변수로 사용자별 `POST /api/v1/tutor/ask` 호출 상한을
+설정한다. 기본값은 30회/분이며 `0`이면 제한하지 않는다. 현재 인증 dependency가
+연결되지 않은 로컬 구현에서는 모든 요청이 `anonymous` actor 하나의 제한을 공유한다.
+제한을 초과하면 다음 오류를 반환한다.
+
+```json
+{
+  "detail": "Tutor 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
+}
+```
 
 ## 7. Tutor 답변 Hover/Click — `IMPLEMENTED*`
 

@@ -20,8 +20,9 @@
    가져온다.
 3. 환경을 `SubSync Local`로 선택한다.
 4. Collection의 **Run**을 선택한다.
-5. 모든 요청을 실행하면 Health, 정상 Tutor 요청, 대화 이력 요청, 422 validation 요청을
-   순서대로 확인할 수 있다.
+5. 모든 요청을 실행하면 Health, 정상 Tutor 요청, 대화 이력 요청, 422 validation과
+   `conversation_id` 검증(404/409) 요청을 순서대로 확인할 수 있다. 다른 영상 대화
+   재사용 검증은 앞선 정상 Tutor 요청이 저장한 `conversation_id` 변수를 사용한다.
 
 ## 인증 토큰 사용
 

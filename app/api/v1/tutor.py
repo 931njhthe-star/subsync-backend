@@ -64,6 +64,7 @@ def get_tutor_state() -> InMemoryTutorState:
 
     return InMemoryTutorState(
         proactive_cooldown_seconds=settings.tutor_proactive_cooldown_seconds,
+        requests_per_minute=settings.tutor_requests_per_minute,
     )
 
 
@@ -143,6 +144,12 @@ async def ask_tutor(
             detail="Tutor가 비활성화되어 있습니다.",
         )
 
+    if not state.allow_request(_DEVELOPMENT_ACTOR_ID):
+        raise HTTPException(
+            status_code=429,
+            detail="Tutor 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
     signals = request.learner_signals
     stored_history = None
     if request.conversation_id:
@@ -150,6 +157,20 @@ async def ask_tutor(
             _DEVELOPMENT_ACTOR_ID,
             request.conversation_id,
         )
+        stored_video_id = state.get_conversation_video_id(
+            _DEVELOPMENT_ACTOR_ID,
+            request.conversation_id,
+        )
+        if stored_video_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="이어갈 Tutor 대화를 찾을 수 없습니다.",
+            )
+        if stored_video_id != request.video_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Tutor 대화와 영상 ID가 일치하지 않습니다.",
+            )
     # 저장된 대화가 있으면 서버 이력을 우선한다. 아직 저장된 대화가 없는 최초
     # 요청만 클라이언트가 보낸 history를 사용해 대화를 초기화한다.
     conversation_history = (
