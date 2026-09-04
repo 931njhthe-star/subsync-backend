@@ -60,10 +60,9 @@ Postman의 폴더형 YAML 파일은 현재 JSON Collection에서 파생된 작�
 ## 4. 작업 시작 방법
 
 1. `AGENTS.md`와 수정 분야의 `docs/` 문서를 읽는다.
-2. Issues/작업 카드에서 담당 영역과 완료 조건을 확인한다.
-3. 작업 브랜치를 만든다.
-4. 기능 하나를 구현하면서 API 명세, Postman, 테스트 또는 migration을 함께 갱신한다.
-5. 제출 전에 다음 명령을 실행한다.
+2. 작업 브랜치를 만든다.
+3. 기능 하나를 구현하면서 API 명세, Postman, 테스트 또는 migration을 함께 갱신한다.
+4. 제출 전에 다음 명령을 실행한다.
 
 ```bash
 uv run pytest
