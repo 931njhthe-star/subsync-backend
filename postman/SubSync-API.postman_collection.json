@@ -55,8 +55,14 @@
         },
         {
           "name":"5. Tutor 답변 평가 보내기",
-          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"helpful\",\n  \"reason\": \"clear_explanation\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"2번 요청의 첫 Tutor 답변에 도움이 됐다는 평가를 기록합니다."},
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"2번 요청의 첫 Tutor 답변에 도움이 됐다는 평가를 기록합니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('평가가 기록된다', function () {","  pm.response.to.have.status(201);","  pm.expect(pm.response.json().rating).to.eql('helpful');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"6. 같은 답변에 중복 평가 거부",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"not_helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"이미 평가한 Tutor 답변은 수정하거나 다시 선택할 수 없습니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('중복 평가는 거부된다', function () {","  pm.response.to.have.status(409);","});"]}}],
           "response":[]
         }
       ]

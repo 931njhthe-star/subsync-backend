@@ -343,6 +343,35 @@ def test_tutor_feedback_is_recorded_for_an_existing_message():
     assert feedback_response.json()["comment"] == "설명이 조금 어려웠어요."
     assert missing_response.status_code == 404
 
+    duplicate_response = client.post(
+        "/api/v1/tutor/feedback",
+        json={
+            "conversation_id": body["conversation_id"],
+            "message_id": body["message_id"],
+            "rating": "helpful",
+        },
+    )
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"] == (
+        "이 Tutor 답변에는 이미 피드백을 남겼습니다."
+    )
+
+def test_tutor_openapi_exposes_three_tutor_endpoints():
+    """Swagger에는 Tutor의 질문·선제 질문·답변 평가 API만 등록한다."""
+
+    tutor_paths = {
+        path
+        for path in app.openapi()["paths"]
+        if path.startswith("/api/v1/tutor/")
+    }
+
+    assert tutor_paths == {
+        "/api/v1/tutor/ask",
+        "/api/v1/tutor/proactive",
+        "/api/v1/tutor/feedback",
+    }
+    assert set(app.openapi()["paths"]["/api/v1/tutor/feedback"]) == {"post"}
+
 
 class FailingClient:
     """주 provider 장애를 재현하는 테스트용 client."""

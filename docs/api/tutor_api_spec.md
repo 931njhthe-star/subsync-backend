@@ -505,8 +505,9 @@ Hover/Click 기능을 완성하려면 다음 별도 도메인 API와 연동한�
 
 ### `POST /api/v1/tutor/feedback`
 
-사용자가 Tutor 답변의 유용성을 평가한 결과를 저장한다. 향후 프롬프트 개선과 답변 품질
-분석에 사용한다.
+사용자가 Tutor 답변의 유용성을 평가한 결과를 저장한다. 이 API는 Tutor가 생성한
+`conversation_id`와 `message_id`를 사용하므로 Tutor 도메인에 포함한다. 운영 단계의
+영구 저장과 RLS·소유권 검증은 사용자/DB 계층이 담당한다.
 
 ### 요청 헤더
 
@@ -536,7 +537,7 @@ Authorization: Bearer <supabase_access_token>
 | `conversation_id` | string | 예 | 최대 100자 | Tutor 대화 ID |
 | `message_id` | string | 예 | 최대 100자 | 평가할 Tutor 메시지 ID |
 | `rating` | string | 예 | `helpful` 또는 `not_helpful` | 답변 유용성 평가 |
-| `reason` | string/null | 아니오 | 최대 50자 | `incorrect`, `too_difficult`, `too_easy`, `irrelevant`, `other` |
+| `reason` | string/null | 아니오 | `incorrect`, `too_difficult`, `too_easy`, `irrelevant`, `other` | 부정 평가의 상세 사유 |
 | `comment` | string/null | 아니오 | 최대 1,000자 | 선택 의견 |
 
 ### 응답 `201 Created`
@@ -553,7 +554,9 @@ Authorization: Bearer <supabase_access_token>
 }
 ```
 
-피드백은 동일한 `message_id`에 대해 최신 평가로 갱신한다. 현재는 개발용 메모리에
+피드백은 사용자당 동일한 `message_id`에 한 번만 기록할 수 있다. 같은 답변에 다시
+평가를 보내면 기존 값을 바꾸지 않고 `409 Conflict`를 반환한다. 운영 DB도
+`UNIQUE (user_id, message_id)` 제약으로 이 규칙을 보장한다. 현재는 개발용 메모리에
 저장하며, 존재하지 않거나 다른 대화에 속한 메시지를 평가하면 `404`를 반환한다.
 
 ## 8. 프론트엔드 연동 순서
@@ -590,7 +593,7 @@ Authorization: Bearer <supabase_access_token>
 | Tutor ON/OFF | Extension 로컬 설정 | 필요 시 사용자별 설정 동기화를 별도 기능으로 추가 |
 | Hover/Click | `reply_tokens` 반환 | 사전 API·단어장 API 연결 |
 | 대화 저장 | 최근 10턴 메모리 | Supabase 사용자별 저장 |
-| 답변 피드백 | 메모리 저장 | Supabase 저장 및 분석 |
+| 답변 피드백 | 메모리 저장 | Tutor API + Supabase 저장 및 분석 |
 
 현재 `IMPLEMENTED*` 항목은 실제 라우터에 등록되어 로컬 검증이 가능하다. 운영 전환 시
 Supabase Auth·DB·Redis를 연결하고 사용자별 소유권과 영구 저장을 검증한 뒤 별표를

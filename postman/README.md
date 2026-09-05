@@ -5,7 +5,7 @@ Collection을 제공한다.
 
 ## 구성 파일
 
-- `SubSync-API.postman_collection.json`: 바로 실행할 5개 요청과 자동 테스트 스크립트
+- `SubSync-API.postman_collection.json`: 바로 실행할 6개 요청과 자동 테스트 스크립트
 - `SubSync-Local.postman_environment.json`: 선택 가능한 로컬 서버 주소 환경
 
 ## 실행 방법
@@ -28,9 +28,9 @@ Collection을 제공한다.
 1. `1. 서버 연결 확인` — `/health`가 `200`인지 확인
 2. `2. Tutor에게 자막 질문하기` — TED-Ed 자막 예시로 실제 Tutor 답변을 받는지 확인
 
-`▶ 선택 기능 — 바로 실행 후 사용` 폴더에는 후속 대화, 선제 질문, 답변 평가 예시가
-있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한 `conversation_id`와
-`message_id`를 자동으로 이어서 사용한다.
+`▶ 선택 기능 — 바로 실행 후 사용` 폴더에는 후속 대화, 선제 질문, 답변 평가와 중복 평가
+거부 예시가 있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한
+`conversation_id`와 `message_id`를 자동으로 이어서 사용한다.
 
 ## 인증 토큰 사용
 

@@ -228,7 +228,8 @@ created_at
 
 현재 API는 `rating`, `reason`, `comment`를 받아 메모리에 기록한다. 운영 단계에서는
 `tutor_feedback` 테이블에 저장하고 `user_id`는 요청 본문이 아니라 검증된 JWT에서
-가져와야 한다.
+가져와야 한다. 사용자는 Tutor 답변 하나에 한 번만 평가할 수 있으므로
+`UNIQUE (user_id, message_id)` 제약을 두고, 중복 평가 요청은 `409 Conflict`로 거부한다.
 
 ## 10. 비기능 요구사항
 

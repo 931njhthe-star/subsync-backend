@@ -281,7 +281,7 @@ class InMemoryTutorState:
                 if stored_actor == actor_id
             )
 
-    def record_feedback(
+    def create_feedback(
         self,
         *,
         actor_id: str,
@@ -290,10 +290,18 @@ class InMemoryTutorState:
         rating: str,
         reason: str | None = None,
         comment: str | None = None,
-    ) -> TutorFeedbackRecord:
-        """메시지별 최신 피드백을 저장하고 저장 결과를 반환한다."""
+    ) -> TutorFeedbackRecord | None:
+        """메시지별 첫 피드백만 저장하고, 이미 있으면 ``None``을 반환한다.
+
+        확인과 저장을 하나의 lock 안에서 처리해 동시에 들어온 두 요청도 둘 다
+        성공하지 않게 한다. 운영 DB에서도 ``UNIQUE (user_id, message_id)`` 제약으로
+        같은 규칙을 보장해야 한다.
+        """
 
         with self._lock:
+            key = (actor_id, message_id)
+            if key in self._feedback:
+                return None
             record = TutorFeedbackRecord(
                 feedback_id=f"fb_{uuid4().hex[:12]}",
                 conversation_id=conversation_id,
@@ -303,7 +311,7 @@ class InMemoryTutorState:
                 comment=comment,
                 created_at=datetime.now(timezone.utc),
             )
-            self._feedback[(actor_id, message_id)] = record
+            self._feedback[key] = record
             return record
 
     def decide_proactive(

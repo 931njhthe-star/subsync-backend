@@ -288,7 +288,11 @@ def create_tutor_feedback(
     request: TutorFeedbackRequest,
     state: InMemoryTutorState = Depends(get_tutor_state),
 ) -> TutorFeedbackResponse:
-    """Tutor 답변 평가를 개발용 메모리 저장소에 기록한다."""
+    """Tutor 답변 평가를 개발용 메모리 저장소에 기록한다.
+
+    운영 환경에서는 사용자/DB 계층이 JWT의 ``sub``로 메시지 소유권을 확인하고
+    영구 저장소에 기록한다. Tutor 라우터는 답변과 평가의 연결 계약만 유지한다.
+    """
 
     if not state.has_message(
         _DEVELOPMENT_ACTOR_ID,
@@ -300,7 +304,7 @@ def create_tutor_feedback(
             detail="평가할 Tutor 메시지를 찾을 수 없습니다.",
         )
 
-    record = state.record_feedback(
+    record = state.create_feedback(
         actor_id=_DEVELOPMENT_ACTOR_ID,
         conversation_id=request.conversation_id,
         message_id=request.message_id,
@@ -308,6 +312,11 @@ def create_tutor_feedback(
         reason=request.reason,
         comment=request.comment,
     )
+    if record is None:
+        raise HTTPException(
+            status_code=409,
+            detail="이 Tutor 답변에는 이미 피드백을 남겼습니다.",
+        )
     return TutorFeedbackResponse(
         feedback_id=record.feedback_id,
         conversation_id=record.conversation_id,
