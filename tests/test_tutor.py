@@ -270,45 +270,14 @@ def test_tutor_api_returns_429_after_request_limit():
     )
 
 
-def test_tutor_settings_disable_manual_and_proactive_questions():
-    """Tutor OFF가 수동 질문과 선제 질문 모두에 반영되는지 확인한다."""
+def test_tutor_settings_api_is_not_exposed():
+    """Tutor ON/OFF는 Extension 로컬 설정으로만 관리한다."""
 
-    updated = client.patch(
+    assert client.get("/api/v1/tutor/settings").status_code == 404
+    assert client.patch(
         "/api/v1/tutor/settings",
         json={"tutor_enabled": False},
-    )
-    assert updated.status_code == 200
-    assert updated.json()["tutor_enabled"] is False
-
-    ask_response = client.post(
-        "/api/v1/tutor/ask",
-        json={
-            "video_id": "off-video",
-            "timestamp": 1,
-            "user_message": "질문",
-        },
-    )
-    proactive_response = client.post(
-        "/api/v1/tutor/proactive",
-        json={
-            "video_id": "off-video",
-            "timestamp": 1,
-            "recent_subtitles": [
-                {"time": 1, "en": "Be honest with yourself."}
-            ],
-        },
-    )
-
-    assert ask_response.status_code == 409
-    assert proactive_response.status_code == 200
-    assert proactive_response.json() == {
-        "should_show": False,
-        "reason": "disabled",
-        "question_id": None,
-        "question": None,
-        "focus_word": None,
-        "expires_in_seconds": None,
-    }
+    ).status_code == 404
 
 
 def test_proactive_question_applies_cooldown_and_seen_word_guard():

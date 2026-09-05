@@ -88,14 +88,6 @@ _PROACTIVE_STOPWORDS = {
 
 
 @dataclass(frozen=True)
-class TutorSettingsState:
-    """한 사용자의 Tutor 활성화 설정."""
-
-    tutor_enabled: bool
-    updated_at: datetime
-
-
-@dataclass(frozen=True)
 class ProactiveDecision:
     """선제 질문 API가 반환할 판단 결과."""
 
@@ -164,7 +156,6 @@ class InMemoryTutorState:
         self.proactive_cooldown_seconds = max(proactive_cooldown_seconds, 0.0)
         self.requests_per_minute = max(requests_per_minute, 0)
         self._clock = clock
-        self._settings: dict[str, TutorSettingsState] = {}
         self._conversations: dict[tuple[str, str], _ConversationState] = {}
         self._proactive: dict[tuple[str, str], _ProactiveState] = {}
         self._feedback: dict[tuple[str, str], TutorFeedbackRecord] = {}
@@ -192,30 +183,6 @@ class InMemoryTutorState:
                 return False
             timestamps.append(now)
             return True
-
-    def get_settings(self, actor_id: str) -> TutorSettingsState:
-        """사용자 설정을 조회하고, 최초 조회 시 Tutor ON 기본값을 만든다."""
-
-        with self._lock:
-            state = self._settings.get(actor_id)
-            if state is None:
-                state = TutorSettingsState(
-                    tutor_enabled=True,
-                    updated_at=datetime.now(timezone.utc),
-                )
-                self._settings[actor_id] = state
-            return state
-
-    def set_tutor_enabled(self, actor_id: str, enabled: bool) -> TutorSettingsState:
-        """사용자별 Tutor ON/OFF 상태를 변경한다."""
-
-        with self._lock:
-            state = TutorSettingsState(
-                tutor_enabled=enabled,
-                updated_at=datetime.now(timezone.utc),
-            )
-            self._settings[actor_id] = state
-            return state
 
     def get_conversation_history(
         self,
@@ -357,9 +324,6 @@ class InMemoryTutorState:
         불필요한 token 사용을 줄이며, 이후 별도 후보 평가 모델로 교체할 수 있다.
         """
 
-        if not self.get_settings(actor_id).tutor_enabled:
-            return _hidden_proactive_decision("disabled")
-
         if playback_state in {"paused", "seeking"}:
             return _hidden_proactive_decision("paused")
 
@@ -412,7 +376,6 @@ class InMemoryTutorState:
         """개발용 상태를 비운다. 테스트 격리와 로컬 재현에 사용한다."""
 
         with self._lock:
-            self._settings.clear()
             self._conversations.clear()
             self._proactive.clear()
             self._feedback.clear()
@@ -439,5 +402,4 @@ __all__ = [
     "InMemoryTutorState",
     "ProactiveDecision",
     "TutorFeedbackRecord",
-    "TutorSettingsState",
 ]

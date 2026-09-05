@@ -28,8 +28,6 @@ from app.schemas.tutor import (
     TutorAskResponse,
     TutorFeedbackRequest,
     TutorFeedbackResponse,
-    TutorSettingsResponse,
-    TutorSettingsUpdateRequest,
     TutorUsageResponse,
 )
 
@@ -57,7 +55,7 @@ def get_usage_tracker() -> InMemoryUsageTracker:
 def get_tutor_state() -> InMemoryTutorState:
     """프로세스에서 공유할 개발용 Tutor 상태 저장소를 생성한다.
 
-    대화·설정·선제 질문 이력·피드백을 요청 사이에 유지하려면 매 요청마다 새
+    대화·선제 질문 이력·피드백을 요청 사이에 유지하려면 매 요청마다 새
     저장소를 만들면 안 된다. 실제 사용자별 영구 저장소가 연결되면 이 dependency를
     Supabase/Redis repository로 교체한다.
     """
@@ -137,12 +135,6 @@ async def ask_tutor(
         ``learner_signals``를 그대로 사용한다. 운영 단계에서는 인증된 사용자 ID로
         서버가 학습 신호를 조회해야 한다.
     """
-
-    if not state.get_settings(_DEVELOPMENT_ACTOR_ID).tutor_enabled:
-        raise HTTPException(
-            status_code=409,
-            detail="Tutor가 비활성화되어 있습니다.",
-        )
 
     if not state.allow_request(_DEVELOPMENT_ACTOR_ID):
         raise HTTPException(
@@ -247,40 +239,6 @@ async def ask_tutor(
             )
             for token in extract_reply_tokens(result.answer.reply)
         ],
-    )
-
-
-@router.get("/settings", response_model=TutorSettingsResponse)
-def get_tutor_settings(
-    state: InMemoryTutorState = Depends(get_tutor_state),
-) -> TutorSettingsResponse:
-    """개발용 actor의 Tutor ON/OFF 설정을 조회한다.
-
-    현재는 Supabase Auth가 연결되지 않아 모든 로컬 요청이 anonymous actor로
-    처리된다. 운영 전환 시 인증 dependency에서 사용자 ID를 주입해야 한다.
-    """
-
-    current = state.get_settings(_DEVELOPMENT_ACTOR_ID)
-    return TutorSettingsResponse(
-        tutor_enabled=current.tutor_enabled,
-        updated_at=current.updated_at,
-    )
-
-
-@router.patch("/settings", response_model=TutorSettingsResponse)
-def update_tutor_settings(
-    request: TutorSettingsUpdateRequest,
-    state: InMemoryTutorState = Depends(get_tutor_state),
-) -> TutorSettingsResponse:
-    """개발용 actor의 Tutor ON/OFF 설정을 변경한다."""
-
-    updated = state.set_tutor_enabled(
-        _DEVELOPMENT_ACTOR_ID,
-        request.tutor_enabled,
-    )
-    return TutorSettingsResponse(
-        tutor_enabled=updated.tutor_enabled,
-        updated_at=updated.updated_at,
     )
 
 
