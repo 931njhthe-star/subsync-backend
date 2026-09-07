@@ -71,6 +71,55 @@ class TutorResult:
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+_PARTIAL_JSON_FIELD_RE = re.compile(
+    r'"(?P<field>reply|result|criteria)"\s*:\s*"(?P<value>(?:\\.|[^"\\])*)(?:"|$)'
+)
+
+
+def _partial_json_field(raw: str, field: str) -> str | None:
+    """끝이 잘린 JSON에서도 이미 완성된 문자열 필드를 안전하게 읽는다."""
+
+    for match in _PARTIAL_JSON_FIELD_RE.finditer(raw):
+        if match.group("field") != field:
+            continue
+        value = match.group("value")
+        try:
+            return json.loads(f'"{value}"')
+        except json.JSONDecodeError:
+            # 끝이 잘린 마지막 문자열은 탈출 문자가 완전하지 않을 수 있다.
+            return value.replace("\\n", "\n").replace('\\"', '"').strip()
+    return None
+
+
+def _recover_truncated_json(
+    raw: str,
+    fallback: TutorAnswer,
+    *,
+    expects_proactive_feedback: bool,
+) -> TutorAnswer:
+    """토큰 한도로 끊긴 JSON에서 완성된 답변과 판정값만 복구한다."""
+
+    reply = _partial_json_field(raw, "reply")
+    if not reply or not reply.strip():
+        return fallback
+
+    feedback = None
+    if expects_proactive_feedback:
+        result = _partial_json_field(raw, "result")
+        criteria = _partial_json_field(raw, "criteria")
+        if result in {"correct", "partial", "incorrect", "unavailable"}:
+            feedback = ProactiveAnswerFeedback(
+                result=result,
+                # criteria가 잘린 경우에도 reply에는 모델이 이미 설명한 핵심이 있다.
+                criteria=(criteria or reply).strip()[:500],
+            )
+
+    return TutorAnswer(
+        reply=reply.strip()[:4_000],
+        suggested_questions=(),
+        provider=fallback.provider,
+        proactive_feedback=feedback,
+    )
 
 
 def _parse_model_response(
@@ -82,8 +131,8 @@ def _parse_model_response(
     """모델 원문을 Tutor 응답 shape으로 정규화한다.
 
     모델이 JSON만 반환하도록 요청하더라도 provider에 따라 code fence나 앞뒤
-    설명이 붙을 수 있다. 가능한 경우 JSON을 복구하고, 복구할 수 없으면 원문을
-    짧은 일반 텍스트 답변으로 전달해 사용자 경험을 보존한다.
+    설명이 붙을 수 있다. JSON이 아닌 짧은 텍스트는 답변으로 사용하고, 토큰 한도로
+    잘린 JSON은 완성된 ``reply``와 판정 필드만 복구한다.
     """
 
     if not raw or not raw.strip():
@@ -96,6 +145,12 @@ def _parse_model_response(
         # 모델이 JSON 앞뒤에 짧은 설명을 붙이는 경우를 위한 최소 복구.
         start, end = candidate.find("{"), candidate.rfind("}")
         if start < 0 or end <= start:
+            if candidate.lstrip().startswith("{"):
+                return _recover_truncated_json(
+                    candidate,
+                    fallback,
+                    expects_proactive_feedback=expects_proactive_feedback,
+                )
             return TutorAnswer(
                 reply=candidate[:4_000],
                 suggested_questions=fallback.suggested_questions,
@@ -104,7 +159,11 @@ def _parse_model_response(
         try:
             parsed = json.loads(candidate[start : end + 1])
         except json.JSONDecodeError:
-            return fallback
+            return _recover_truncated_json(
+                candidate,
+                fallback,
+                expects_proactive_feedback=expects_proactive_feedback,
+            )
 
     if not isinstance(parsed, dict):
         return fallback

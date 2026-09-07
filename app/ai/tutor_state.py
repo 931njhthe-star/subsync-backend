@@ -161,6 +161,7 @@ class _ProactiveState:
     last_question_at: float | None = None
     seen_focus_words: set[str] = field(default_factory=set)
     questions: dict[str, str] = field(default_factory=dict)
+    answered_question_ids: set[str] = field(default_factory=set)
 
 
 class InMemoryTutorState:
@@ -412,6 +413,45 @@ class InMemoryTutorState:
             if state is None:
                 return None
             return state.questions.get(question_id)
+
+    def find_pending_proactive_question(
+        self,
+        actor_id: str,
+        video_id: str,
+        *,
+        focus_word: str | None = None,
+    ) -> tuple[str, str] | None:
+        """아직 답하지 않은 최근 선제 질문을 반환한다.
+
+        이전 Extension은 question_id를 보내지 않으므로, 집중 표현이 일치하면 그
+        질문을 우선 찾고 표현도 없으면 가장 최근 질문을 한 번만 자동 연결한다.
+        답변 처리 후 ID를 소비해 이후의 일반 질문이 오답 채점으로 바뀌지 않게 한다.
+        """
+
+        with self._lock:
+            state = self._proactive.get((actor_id, video_id))
+            if state is None:
+                return None
+            candidates = reversed(tuple(state.questions.items()))
+            for question_id, stored_focus_word in candidates:
+                if question_id in state.answered_question_ids:
+                    continue
+                if focus_word is None or stored_focus_word.casefold() == focus_word.casefold():
+                    return question_id, stored_focus_word
+            return None
+
+    def mark_proactive_question_answered(
+        self,
+        actor_id: str,
+        video_id: str,
+        question_id: str,
+    ) -> None:
+        """자동 연결한 선제 질문을 한 번만 채점하도록 소비 처리한다."""
+
+        with self._lock:
+            state = self._proactive.get((actor_id, video_id))
+            if state is not None and question_id in state.questions:
+                state.answered_question_ids.add(question_id)
 
     def reset(self) -> None:
         """개발용 상태를 비운다. 테스트 격리와 로컬 재현에 사용한다."""

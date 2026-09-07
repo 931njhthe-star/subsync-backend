@@ -62,15 +62,14 @@ def build_tutor_prompt(context: TutorContext, profile: LearnerProfile) -> TutorP
     difficulty_rules = _DIFFICULTY_RULES[profile.tutor_difficulty.value]
     difficulty_label = _DIFFICULTY_LABELS[profile.tutor_difficulty.value]
     proactive_rule = (
-        """\n선제 질문 답안 판정:\n"
-        "사용자는 Tutor가 먼저 낸 집중 표현의 뜻을 추측해 답했습니다. 답과 자막 속 쓰임을 "
+        "\n선제 질문 답안 판정:\n"
+        "사용자는 Tutor가 먼저 낸 집중 표현의 뜻을 추측해 답했습니다. 자막 속 쓰임과 "
         "비교해 correct, partial, incorrect 중 하나로 판정하세요.\n"
         "- correct: 핵심 의미와 자막 속 쓰임이 맞습니다.\n"
         "- partial: 핵심 방향은 맞지만 의미 또는 쓰임 일부가 빠졌거나 부정확합니다.\n"
         "- incorrect: 자막 속 표현의 의미와 맞지 않습니다.\n"
-        "reply 첫 줄에는 판정 결과를 한국어로 짧게 말하고, proactive_feedback.criteria에는 "
-        "정답으로 인정되는 뜻과 판정 이유를 한두 문장으로 쓰세요.\n"
-        """
+        "reply는 판정 결과만 60자 이내로 쓰고, proactive_feedback.criteria는 정답 기준과 "
+        "판정 이유만 80자 이내 한 문장으로 쓰세요.\n"
         if context.is_proactive_answer
         else ""
     )
@@ -104,6 +103,7 @@ def build_tutor_prompt(context: TutorContext, profile: LearnerProfile) -> TutorP
 6. 아래의 정확한 형태를 지키는 유효한 JSON만 반환하세요:
 {{"reply":"string","suggested_questions":[],"proactive_feedback":{feedback_shape}}}
 suggested_questions는 항상 빈 배열로 반환하세요.
+모든 문자열을 짧게 유지하고, JSON 객체를 반드시 닫으세요.
 """
 
     # 프롬프트 안에서 각 데이터의 경계를 유지해 자막 속 지시문 주입을 방지한다.

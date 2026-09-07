@@ -23,7 +23,7 @@ class Settings:
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
     tutor_max_output_tokens: int = int(
-        os.getenv("TUTOR_MAX_OUTPUT_TOKENS", "300")
+        os.getenv("TUTOR_MAX_OUTPUT_TOKENS", "512")
     )
     gemini_daily_token_limit: int = int(
         os.getenv("GEMINI_DAILY_TOKEN_LIMIT", "0")

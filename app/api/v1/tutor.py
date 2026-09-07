@@ -149,6 +149,7 @@ async def ask_tutor(
     signals = request.learner_signals
     focus_word = request.focus_word
     is_proactive_answer = False
+    proactive_question_id = request.proactive_question_id
     if request.proactive_question_id:
         focus_word = state.get_proactive_focus_word(
             _DEVELOPMENT_ACTOR_ID,
@@ -161,6 +162,15 @@ async def ask_tutor(
                 detail="답변할 Tutor 선제 질문을 찾을 수 없습니다.",
             )
         is_proactive_answer = True
+    else:
+        pending_question = state.find_pending_proactive_question(
+            _DEVELOPMENT_ACTOR_ID,
+            request.video_id,
+            focus_word=focus_word,
+        )
+        if pending_question is not None:
+            proactive_question_id, focus_word = pending_question
+            is_proactive_answer = True
 
     stored_history = None
     if request.conversation_id:
@@ -229,11 +239,31 @@ async def ask_tutor(
         tutor_reply=result.answer.reply,
         initial_history=conversation_history if stored_history is None else (),
     )
+    if is_proactive_answer and proactive_question_id:
+        state.mark_proactive_question_answered(
+            _DEVELOPMENT_ACTOR_ID,
+            request.video_id,
+            proactive_question_id,
+        )
+
+    proactive_feedback = result.answer.proactive_feedback
+    reply = result.answer.reply
+    if proactive_feedback:
+        labels = {
+            "correct": "정답",
+            "partial": "부분 정답",
+            "incorrect": "오답",
+            "unavailable": "판정 불가",
+        }
+        reply = (
+            f"판정: {labels[proactive_feedback.result]}\n"
+            f"정답 기준: {proactive_feedback.criteria}"
+        )
 
     return TutorAskResponse(
         conversation_id=result.conversation_id,
         message_id=result.message_id,
-        reply=result.answer.reply,
+        reply=reply,
         suggested_questions=list(result.answer.suggested_questions),
         provider=result.answer.provider,
         model=result.answer.model,
@@ -248,10 +278,10 @@ async def ask_tutor(
         context_subtitle_count=len(result.context.nearby_subtitles),
         proactive_feedback=(
             {
-                "result": result.answer.proactive_feedback.result,
-                "criteria": result.answer.proactive_feedback.criteria,
+                "result": proactive_feedback.result,
+                "criteria": proactive_feedback.criteria,
             }
-            if result.answer.proactive_feedback
+            if proactive_feedback
             else None
         ),
     )

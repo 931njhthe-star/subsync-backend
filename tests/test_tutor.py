@@ -20,7 +20,12 @@ from app.ai.llm_client import (
 from app.ai.prompts import build_tutor_prompt
 from app.ai.provider_router import ProviderQuota, ProviderRouter
 from app.api.v1.tutor import get_tutor_state
-from app.ai.tutor_service import TutorAskCommand, TutorService
+from app.ai.tutor_service import (
+    TutorAnswer,
+    TutorAskCommand,
+    TutorService,
+    _parse_model_response,
+)
 from app.ai.usage_tracker import InMemoryUsageTracker
 from app.main import app
 
@@ -121,6 +126,31 @@ def test_proactive_answer_prompt_requests_structured_grading():
     assert "선제 질문 답안 판정" in prompt.system_instruction
     assert "correct, partial, incorrect" in prompt.system_instruction
     assert '"proactive_feedback"' in prompt.system_instruction
+    assert "60자 이내" in prompt.system_instruction
+    assert "JSON 객체를 반드시 닫으세요" in prompt.system_instruction
+
+
+def test_incomplete_model_json_recovers_the_completed_reply_and_grading():
+    """토큰 한도로 잘려도 JSON 원문 대신 완성된 답변과 판정만 사용한다."""
+
+    fallback = TutorAnswer(
+        reply="답변을 정리하지 못했습니다.",
+        suggested_questions=(),
+        provider="gemini",
+    )
+    parsed = _parse_model_response(
+        (
+            '{"reply":"아쉽게도 틀렸습니다. evaluate는 평가하다라는 뜻입니다.",'
+            '"proactive_feedback":{"result":"incorrect","criteria":"evaluate의 뜻은'
+        ),
+        fallback,
+        expects_proactive_feedback=True,
+    )
+
+    assert parsed.reply == "아쉽게도 틀렸습니다. evaluate는 평가하다라는 뜻입니다."
+    assert parsed.proactive_feedback is not None
+    assert parsed.proactive_feedback.result == "incorrect"
+    assert "evaluate의 뜻은" in parsed.proactive_feedback.criteria
 
 
 def test_tutor_api_works_without_gemini_key():
@@ -314,8 +344,8 @@ def test_proactive_question_applies_cooldown_and_seen_word_guard():
     assert third.json()["reason"] == "already_seen"
 
 
-def test_proactive_answer_returns_feedback_for_the_original_question():
-    """선제 질문 ID로 연결한 답만 판정 결과를 받는지 확인한다."""
+def test_proactive_answer_returns_feedback_without_question_id():
+    """기존 Extension도 가장 최근 선제 질문 답을 자동 연결하는지 확인한다."""
 
     proactive = client.post(
         "/api/v1/tutor/proactive",
@@ -334,8 +364,6 @@ def test_proactive_answer_returns_feedback_for_the_original_question():
             "video_id": "answer-video",
             "timestamp": 10,
             "user_message": "솔직하게 말한다는 뜻이에요.",
-            "focus_word": "다른 표현",
-            "proactive_question_id": question_id,
             "recent_subtitles": [
                 {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
             ],
@@ -349,7 +377,19 @@ def test_proactive_answer_returns_feedback_for_the_original_question():
     assert feedback is not None
     assert feedback["result"] == "unavailable"
     assert "stub provider" in feedback["criteria"]
+    assert "판정: 판정 불가" in response.json()["reply"]
+    assert "정답 기준:" in response.json()["reply"]
     assert "honest with" in response.json()["reply"]
+
+    later_question = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "answer-video",
+            "timestamp": 11,
+            "user_message": "다른 질문이에요.",
+        },
+    )
+    assert later_question.json()["proactive_feedback"] is None
 
 
 def test_unknown_proactive_question_is_rejected():

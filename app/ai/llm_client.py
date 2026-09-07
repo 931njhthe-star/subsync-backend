@@ -127,7 +127,7 @@ class RuleBasedTutorClient:
             response["proactive_feedback"] = {
                 "result": "unavailable",
                 "criteria": (
-                    "stub provider는 의미를 정확히 판정할 수 없습니다. "
+                    f"'{focus_word or '이 표현'}'은 stub provider가 의미를 정확히 판정할 수 없습니다. "
                     "Gemini 또는 Groq provider를 연결하면 자막 문맥으로 정답을 판정합니다."
                 ),
             }
@@ -141,7 +141,7 @@ class GeminiClient:
     api_key: str
     model: str = "gemini-3.6-flash"
     timeout_seconds: float = 20.0
-    max_output_tokens: int = 300
+    max_output_tokens: int = 512
     name: str = "gemini"
 
     @property
@@ -259,7 +259,7 @@ class GroqClient:
     api_key: str
     model: str = "openai/gpt-oss-20b"
     timeout_seconds: float = 20.0
-    max_output_tokens: int = 300
+    max_output_tokens: int = 512
     base_url: str = "https://api.groq.com/openai/v1"
     name: str = "groq"
 
