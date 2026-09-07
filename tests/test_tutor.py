@@ -19,7 +19,7 @@ from app.ai.llm_client import (
 )
 from app.ai.prompts import build_tutor_prompt
 from app.ai.provider_router import ProviderQuota, ProviderRouter
-from app.api.v1.tutor import get_tutor_state
+from app.api.v1.tutor import get_llm_usage_repository, get_tutor_state
 from app.ai.tutor_service import (
     TutorAnswer,
     TutorAskCommand,
@@ -254,7 +254,7 @@ def test_tutor_conversation_id_reuses_in_memory_history():
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["conversation_id"] == conversation_id
-    conversation = get_tutor_state().get_conversation("anonymous", conversation_id)
+    conversation = get_tutor_state().get_conversation("test", conversation_id)
     assert conversation is not None
     _, history = conversation
     assert len(history) == 4
@@ -540,8 +540,8 @@ def test_tutor_feedback_is_recorded_for_an_existing_message():
         "이 Tutor 답변에는 이미 피드백을 남겼습니다."
     )
 
-def test_tutor_openapi_exposes_three_tutor_endpoints():
-    """Swagger에는 Tutor의 질문·선제 질문·답변 평가 API만 등록한다."""
+def test_tutor_openapi_exposes_usage_endpoint():
+    """Swagger에는 Tutor의 질문·사용량·선제 질문·답변 평가 API를 등록한다."""
 
     tutor_paths = {
         path
@@ -551,10 +551,69 @@ def test_tutor_openapi_exposes_three_tutor_endpoints():
 
     assert tutor_paths == {
         "/api/v1/tutor/ask",
+        "/api/v1/tutor/usage",
         "/api/v1/tutor/proactive",
         "/api/v1/tutor/feedback",
     }
     assert set(app.openapi()["paths"]["/api/v1/tutor/feedback"]) == {"post"}
+
+
+def test_tutor_usage_api_returns_development_total():
+    """로그인 전 usage API는 전체 개발 사용량 집계를 반환한다."""
+
+    from app.main import app
+    from app.db.llm_usage import LLMUsageSummary
+
+    class FakeUsageRepository:
+        async def summarize_all(self):
+            return LLMUsageSummary(3, 300, 60, 360)
+
+    app.dependency_overrides[get_llm_usage_repository] = lambda: FakeUsageRepository()
+    try:
+        response = client.get("/api/v1/tutor/usage")
+    finally:
+        app.dependency_overrides.pop(get_llm_usage_repository, None)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "request_count": 3,
+        "input_tokens": 300,
+        "output_tokens": 60,
+        "total_tokens": 360,
+    }
+
+
+def test_tutor_ask_persists_usage_for_development_actor():
+    """Tutor 답변 뒤 실제 usage 행이 test actor로 비동기 저장된다."""
+
+    from app.db.llm_usage import LLMUsageEntry
+
+    entries: list[LLMUsageEntry] = []
+
+    class RecordingUsageRepository:
+        async def write(self, entry):
+            entries.append(entry)
+
+    app.dependency_overrides[get_llm_usage_repository] = (
+        lambda: RecordingUsageRepository()
+    )
+    try:
+        response = client.post(
+            "/api/v1/tutor/ask",
+            json={
+                "video_id": "usage-video",
+                "timestamp": 1,
+                "user_message": "example은 무슨 뜻인가요?",
+                "recent_subtitles": [{"time": 1, "en": "An example helps."}],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_usage_repository, None)
+
+    assert response.status_code == 200
+    assert len(entries) == 1
+    assert entries[0].provider == response.json()["provider"]
+    assert entries[0].total_tokens == response.json()["usage"]["total_tokens"]
 
 
 class FailingClient:

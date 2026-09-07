@@ -22,6 +22,11 @@ class Settings:
     api_log_timeout_seconds: float = float(
         os.getenv("API_LOG_TIMEOUT_SECONDS", "2")
     )
+    # Tutor 사용량 저장도 API 로그와 같은 서버 전용 키를 사용한다. DB 지연이 응답을
+    # 방해하지 않도록 별도 timeout을 둘 수 있다.
+    llm_usage_timeout_seconds: float = float(
+        os.getenv("LLM_USAGE_TIMEOUT_SECONDS", "2")
+    )
     # 현재 구현에서는 아래 설정 중 Video Tutor 관련 값만 사용한다.
     # 외부 provider는 명시적으로 켠 경우에만 사용한다. 기본값은 로컬 fallback이다.
     # gemini/auto: Gemini -> Groq, groq: Groq -> Gemini 순서로 시도한다.

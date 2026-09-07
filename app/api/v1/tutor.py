@@ -8,8 +8,9 @@ Gemini/Groq/stub provider 조합을 한 번만 생성한다. 실제 튜터 로�
 from __future__ import annotations
 
 from functools import lru_cache
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app.ai.context_builder import ConversationTurn, SubtitleLine
 from app.ai.learner_profile import LearnerSignals
@@ -19,6 +20,7 @@ from app.ai.tutor_state import InMemoryTutorState
 from app.ai.tutor_service import TutorAskCommand, TutorService
 from app.ai.usage_tracker import InMemoryUsageTracker
 from app.core.config import settings
+from app.db.llm_usage import LLMUsageEntry, LLMUsageRepository
 from app.schemas.tutor import (
     ProactiveTutorRequest,
     ProactiveTutorResponse,
@@ -27,14 +29,40 @@ from app.schemas.tutor import (
     TutorFeedbackRequest,
     TutorFeedbackResponse,
     TutorUsageResponse,
+    TutorUsageSummaryResponse,
 )
 
 
 router = APIRouter(prefix="/tutor", tags=["Video Tutor"])
+logger = logging.getLogger(__name__)
 
 # Supabase Auth dependency가 연결되기 전까지 로컬에서 사용할 개발용 actor다.
 # 운영 환경에서는 이 값을 사용하지 않고 검증된 JWT의 sub로 교체해야 한다.
-_DEVELOPMENT_ACTOR_ID = "anonymous"
+_DEVELOPMENT_ACTOR_ID = "test"
+
+
+@lru_cache(maxsize=1)
+def get_llm_usage_repository() -> LLMUsageRepository:
+    """프로세스에서 공유할 Tutor 사용량 Supabase 저장소를 생성한다."""
+
+    return LLMUsageRepository(
+        url=settings.supabase_url,
+        secret_key=settings.supabase_secret_key,
+        timeout_seconds=settings.llm_usage_timeout_seconds,
+    )
+
+
+async def _write_llm_usage_safely(
+    repository: LLMUsageRepository,
+    entry: LLMUsageEntry,
+) -> None:
+    """사용량 저장 장애가 이미 생성된 Tutor 답변을 실패시키지 않게 한다."""
+
+    try:
+        await repository.write(entry)
+    except Exception:  # pragma: no cover - network failure is environment-specific
+        # 질문 원문·토큰·식별자는 민감할 수 있으므로 저장 실패 원인만 남긴다.
+        logger.warning("llm_usage_write_failed")
 
 
 @lru_cache(maxsize=1)
@@ -122,8 +150,10 @@ def get_tutor_service() -> TutorService:
 @router.post("/ask", response_model=TutorAskResponse)
 async def ask_tutor(
     request: TutorAskRequest,
+    background_tasks: BackgroundTasks,
     service: TutorService = Depends(get_tutor_service),
     state: InMemoryTutorState = Depends(get_tutor_state),
+    usage_repository: LLMUsageRepository = Depends(get_llm_usage_repository),
 ) -> TutorAskResponse:
     """영상 시점의 자막 문맥을 바탕으로 Tutor 답변을 생성한다.
 
@@ -246,6 +276,20 @@ async def ask_tutor(
             proactive_question_id,
         )
 
+    # provider가 반환한 사용량은 응답 본문뿐 아니라 DB에도 남긴다. stub fallback은
+    # 실제 외부 모델을 호출하지 않아 0 token일 수 있지만 호출 흐름은 확인 가능하다.
+    background_tasks.add_task(
+        _write_llm_usage_safely,
+        usage_repository,
+        LLMUsageEntry(
+            provider=result.answer.provider,
+            model_name=result.answer.model,
+            input_tokens=result.answer.usage.input_tokens,
+            output_tokens=result.answer.usage.output_tokens,
+            total_tokens=result.answer.usage.normalized_total,
+        ),
+    )
+
     proactive_feedback = result.answer.proactive_feedback
     reply = result.answer.reply
     if proactive_feedback:
@@ -284,6 +328,32 @@ async def ask_tutor(
             if proactive_feedback
             else None
         ),
+    )
+
+
+@router.get("/usage", response_model=TutorUsageSummaryResponse)
+async def get_tutor_usage(
+    usage_repository: LLMUsageRepository = Depends(get_llm_usage_repository),
+) -> TutorUsageSummaryResponse:
+    """개발 Supabase에 저장된 전체 토큰 사용량 합계를 반환한다.
+
+    현재 테이블에는 사용자 식별 컬럼이 없으므로 전체 개발 사용량만 조회한다. 인증을
+    연결할 때는 migration으로 JWT ``sub`` 컬럼을 추가하고 자신의 행만 조회해야 한다.
+    """
+
+    try:
+        summary = await usage_repository.summarize_all()
+    except Exception:
+        # 조회 장애를 성공처럼 보이게 하지 않는다. 사용량 화면은 원인을 알 수 있어야 한다.
+        raise HTTPException(
+            status_code=503,
+            detail="LLM 사용량을 조회할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from None
+    return TutorUsageSummaryResponse(
+        request_count=summary.request_count,
+        input_tokens=summary.input_tokens,
+        output_tokens=summary.output_tokens,
+        total_tokens=summary.total_tokens,
     )
 
 

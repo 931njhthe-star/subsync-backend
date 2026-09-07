@@ -125,6 +125,14 @@ class TutorUsageResponse(BaseModel):
     total_tokens: int = Field(ge=0, description="총 토큰 수")
 
 
+class TutorUsageSummaryResponse(BaseModel):
+    """개발 환경 전체 Tutor 토큰 사용량 집계."""
+    request_count: int = Field(ge=0, description="사용량이 기록된 LLM 호출 횟수")
+    input_tokens: int = Field(ge=0, description="누적 입력 토큰 수")
+    output_tokens: int = Field(ge=0, description="누적 출력 토큰 수")
+    total_tokens: int = Field(ge=0, description="누적 총 토큰 수")
+
+
 class ProactiveAnswerFeedbackResponse(BaseModel):
     """선제 질문 답에 대한 Tutor 판정과 사용자가 확인할 기준."""
 
