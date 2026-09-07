@@ -39,7 +39,7 @@ YouTube 영상
 | `SR-54` | Tutor 대화의 이전 Context를 유지할 수 있어야 한다. | P0 | 개발용 완료 |
 | `SR-55` | Tutor 답변을 사용자별 대화 기록으로 저장할 수 있어야 한다. | P0 | Supabase 연동 필요 |
 | `SR-56` | Tutor가 먼저 학습 질문이나 제안을 생성할 수 있어야 한다. | P0 | 기본 기능 완료 |
-| `SR-57` | Tutor OFF 상태에서는 Tutor UI 및 선제 질문을 비활성화해야 한다. | P0 | API 완료, UI 연동 필요 |
+| `SR-57` | Tutor OFF 상태에서는 Tutor UI 및 선제 질문을 비활성화해야 한다. | P0 | Extension 로컬 설정으로 구현 |
 | `SR-58` | Tutor 영어 답변에 공통 Mouse Interaction을 적용해야 한다. | P0 | 토큰 API 완료, 사전 연동 필요 |
 
 ### 상태 의미
@@ -170,12 +170,10 @@ conversation_id 없음            conversation_id=첫 응답 ID
 
 ### 7.1 동작 규칙
 
-- Tutor ON이면 수동 질문과 선제 질문을 사용할 수 있다.
-- Tutor OFF이면 선제 질문 응답은 `should_show=false`, `reason=disabled`를 반환한다.
-- Tutor OFF 상태에서 수동 질문 요청은 비용이 발생하지 않도록 `409`로 차단한다.
+- Tutor ON/OFF는 Extension의 로컬 설정으로 관리한다.
+- Tutor OFF이면 Extension은 Tutor UI를 숨기고 수동 질문·선제 질문 API를 호출하지 않는다.
 - ON/OFF 설정을 변경해도 다른 SubSync 기능 설정은 변경하지 않는다.
-- 현재 개발용 설정은 `anonymous` actor 기준 메모리에 저장된다.
-- 운영 단계에서는 Supabase 사용자별 설정으로 교체해야 한다.
+- 서버는 Tutor ON/OFF 상태를 저장하거나 검증하지 않는다.
 
 ### 7.2 UI 책임
 
@@ -230,7 +228,8 @@ created_at
 
 현재 API는 `rating`, `reason`, `comment`를 받아 메모리에 기록한다. 운영 단계에서는
 `tutor_feedback` 테이블에 저장하고 `user_id`는 요청 본문이 아니라 검증된 JWT에서
-가져와야 한다.
+가져와야 한다. 사용자는 Tutor 답변 하나에 한 번만 평가할 수 있으므로
+`UNIQUE (user_id, message_id)` 제약을 두고, 중복 평가 요청은 `409 Conflict`로 거부한다.
 
 ## 10. 비기능 요구사항
 
@@ -261,8 +260,6 @@ created_at
 - `POST /api/v1/tutor/ask`에 `conversation_id` 입력 지원
 - 개발용 대화 이력 저장 및 다음 질문에 자동 전달
 - `reply_tokens` 생성 및 UTF-16 offset 반환
-- `GET/PATCH /api/v1/tutor/settings`
-- Tutor OFF 시 선제 질문 숨김 및 수동 질문 `409` 차단
 - `POST /api/v1/tutor/proactive`
 - cooldown·중복 표현·paused/seeking 제어
 - `POST /api/v1/tutor/feedback`

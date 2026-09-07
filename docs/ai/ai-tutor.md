@@ -93,6 +93,10 @@ Groq를 시도한다.
 `LLM_PROVIDER=groq`로 설정하면 Groq가 우선이고 Gemini가 첫 번째 대체 provider가 된다.
 모든 외부 provider가 실패하면 네트워크 없는 `stub` 응답을 반환한다.
 
+Tutor 호출은 `TUTOR_REQUESTS_PER_MINUTE`로 사용자별 분당 횟수를 제한한다. 현재 로그인
+연동 전에는 `anonymous` actor 기준의 메모리 제한이며, 운영 단계에서는 JWT의 `sub`와
+Redis 같은 공유 저장소를 사용해야 여러 worker에서도 제한이 일관되게 적용된다.
+
 Gemini의 `usageMetadata`와 Groq의 OpenAI-compatible `usage`를 다음 공통 구조로 기록한다.
 
 ```text
@@ -103,6 +107,10 @@ provider / model / input_tokens / output_tokens / total_tokens / recorded_at
 누적 quota를 유지하려면 `InMemoryUsageTracker`를 Redis 또는 PostgreSQL 구현으로 교체해야
 한다. provider가 반환하는 실제 usage가 최종 기준이며, 요청 전 토큰 추정치는 호출을
 줄이기 위한 보호 장치다.
+
+Gemini와 Groq 요청의 최대 출력은 현재 800 token으로 고정한다. ProviderRouter도 같은
+값을 사전 예약해 로컬 quota를 초과할 가능성이 있는 호출을 먼저 건너뛴다. 실제
+provider가 반환한 `usage`가 800보다 작으면 그 값을 기록한다.
 
 실행 예시는 다음과 같다.
 

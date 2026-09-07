@@ -15,7 +15,6 @@
 | 영상 내용을 기반으로 답변 | `recent_subtitles`, `reply`, `context_subtitle_count` | `IMPLEMENTED` |
 | Tutor가 먼저 학습 질문 제안 | `POST /api/v1/tutor/proactive` | `IMPLEMENTED`* |
 | Tutor 영어 답변에 Hover/Click 적용 | `reply_tokens`와 사전 조회 API 연동 | 부분 구현 |
-| Tutor ON/OFF | `GET/PATCH /api/v1/tutor/settings` | `IMPLEMENTED`* |
 | 저장 단어·정답률·응답 시간 기반 개인화 | `learner_signals`, `learner_level`, `tutor_difficulty` | 프로토타입 구현 |
 
 `suggested_questions`는 사용자가 질문한 뒤 제공하는 후속 질문이다. Tutor가 먼저 질문을
@@ -33,8 +32,6 @@
 
 | 상태 | Method | Path | 설명 |
 | --- | --- | --- | --- |
-| `IMPLEMENTED`* | `GET` | `/api/v1/tutor/settings` | 현재 사용자의 Tutor 활성화 상태 조회 |
-| `IMPLEMENTED`* | `PATCH` | `/api/v1/tutor/settings` | Tutor ON/OFF 변경 |
 | `IMPLEMENTED`* | `POST` | `/api/v1/tutor/proactive` | 선제 질문 표시 여부 판단·생성 |
 | `IMPLEMENTED`* | `POST` | `/api/v1/tutor/feedback` | Tutor 답변 평가 기록 |
 
@@ -98,7 +95,7 @@ Authorization: Bearer <supabase_access_token>
 | `video_id` | string | 예 | 1~50자 | YouTube 영상 ID |
 | `timestamp` | number | 예 | 0 이상 | 질문 시점(초) |
 | `user_message` | string | 예 | 1~2,000자 | 사용자의 질문 |
-| `recent_subtitles` | array | 아니오 | 최대 100개, 기본 `[]` | 질문 시점 주변 자막 |
+| `recent_subtitles` | array | 아니오* | 최대 100개, 기본 `[]` | 질문 시점 주변 자막. 영상 문맥 질문에서는 빈 배열을 보내지 않는다. |
 | `learner_signals` | object | 아니오 | 기본 `{}` | 학습자 수준 추론용 입력 |
 | `conversation_history` | array | 아니오 | 최대 10개, 기본 `[]` | 최근 Tutor 대화 이력 |
 | `focus_word` | string/null | 아니오 | 최대 100자, 기본 `null` | 집중해서 설명할 표현 |
@@ -111,6 +108,23 @@ Authorization: Bearer <supabase_access_token>
 | `time` | number | 예 | 0 이상 | 자막 시작 시각(초) |
 | `en` | string | 예 | 1~500자 | 영어 자막 |
 | `ko` | string/null | 아니오 | 최대 500자 | 한국어 자막 |
+
+> **클라이언트 문맥 전달 계약**: `recent_subtitles`는 API 형식상 생략 가능하지만,
+> 자막·영상 표현에 관한 질문에서는 사실상 필수다. 빈 배열 또는 잘못된 필드명(예:
+> `subtitles`, `timestamp`, `english`)을 보내면 서버는 자막 문맥이 없다고 처리하고
+> 일반적인 답변만 반환한다. 클라이언트는 매 `/tutor/ask` 호출 때 현재 자막을 포함해
+> 앞 4줄·뒤 2줄, 최대 7줄을 `{ time, en, ko }` 형태로 보낸다. `ko`는 없으면 `null`로
+> 보낼 수 있다.
+
+다음처럼 응답의 `context_subtitle_count`가 `0`이면, 클라이언트는 자막 수집 실패로
+간주하고 사용자에게 자막을 켜거나 다른 영상을 선택하도록 안내할 수 있다.
+
+```json
+{
+  "context_subtitle_count": 0,
+  "reply": "해당 구간의 자막을 찾을 수 없습니다. 자막을 켠 뒤 다시 시도해 주세요."
+}
+```
 
 #### `learner_signals`
 
@@ -144,6 +158,52 @@ Authorization: Bearer <supabase_access_token>
 `role`은 `user` 또는 `tutor`만 허용한다.
 
 ### 4.3 요청 예시
+
+#### 자막 문맥을 포함한 최소 요청
+
+TED-Ed 영상에서 사용할 수 있는 형식의 최소 요청 예시다. 이 요청처럼
+`recent_subtitles`의 필드 이름을 정확히 유지해야 Tutor가 영상 문맥을 사용할 수 있다.
+
+```json
+{
+  "video_id": "XFhY4Vy3IHc",
+  "timestamp": 42.3,
+  "user_message": "'inconsistent'는 여기서 어떤 뜻인가요?",
+  "recent_subtitles": [
+    {
+      "time": 36.8,
+      "en": "English spelling is famously inconsistent.",
+      "ko": "영어 철자는 유난히 일관성이 없습니다."
+    },
+    {
+      "time": 42.1,
+      "en": "Why does it work that way?",
+      "ko": "왜 그런 방식으로 작동할까요?"
+    }
+  ]
+}
+```
+
+#### Extension 요청 코드 예시
+
+```javascript
+const body = {
+  video_id: getVideoId(),
+  timestamp: player.currentTime,
+  user_message: question,
+  recent_subtitles: nearbySubtitles.map((subtitle) => ({
+    time: Number(subtitle.timestamp),
+    en: String(subtitle.learn || "").trim(),
+    ko: String(subtitle.known || "").trim() || null
+  }))
+};
+
+const response = await fetch("http://localhost:8000/api/v1/tutor/ask", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body)
+});
+```
 
 ```json
 {
@@ -235,6 +295,9 @@ provider가 usage를 제공하지 않는 경우 값이 추정되거나 `0`일 �
 tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 재시작하면 누적 사용량이
 초기화된다.
 
+Gemini/Groq provider의 한 요청 최대 출력은 800 token이며, 로컬 quota guard는 이 값을
+예약 토큰으로 사용한다.
+
 ### 4.7 응답 예시
 
 ```json
@@ -275,8 +338,9 @@ tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 
 | --- | --- |
 | `422` | 필수 필드 누락, 길이 제한 초과, 음수 timestamp, 허용 범위를 벗어난 학습 신호 |
 | `401` | Supabase Auth 연동 후 Access Token 없음·만료·변조 |
-| `409` | Tutor OFF 정책에서 수동 질문을 차단하도록 구현한 경우 |
-| `429` | 서버 요청 빈도 제한을 초과한 경우 |
+| `404` | 존재하지 않는 `conversation_id`로 대화를 이어가려는 경우 |
+| `409` | 다른 영상에 연결된 `conversation_id`를 재사용한 경우 |
+| `429` | 사용자(로그인 전에는 `anonymous`)별 Tutor 요청 빈도 제한을 초과한 경우 |
 | `503` | 인증·DB 등 필수 의존 서비스 장애. 현재 외부 LLM 실패는 `stub`으로 처리 |
 
 공통 오류 응답 형식은 다음과 같다.
@@ -287,63 +351,7 @@ tracker는 프로세스 메모리 기반 개발용 저장소이므로 서버를 
 }
 ```
 
-## 5. Tutor ON/OFF — `IMPLEMENTED*`
-
-Tutor OFF 상태에서는 Tutor가 자동으로 표시하는 선제 질문을 절대 생성하거나 표시하지
-않는다. 설정은 사용자별로 저장한다.
-
-### 5.1 `GET /api/v1/tutor/settings`
-
-현재 사용자의 Tutor 설정을 조회한다.
-
-#### 요청 헤더
-
-```http
-Authorization: Bearer <supabase_access_token>
-```
-
-현재 로컬 구현에서는 인증 헤더를 검사하지 않는다. Supabase Auth 연동 후 사용자별
-설정을 보호하기 위해 필수 헤더로 변경한다.
-
-#### 응답 `200 OK`
-
-```json
-{
-  "tutor_enabled": true,
-  "updated_at": "2026-09-03T12:00:00Z"
-}
-```
-
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `tutor_enabled` | boolean | Tutor 기능 활성화 여부 |
-| `updated_at` | string | 설정이 마지막으로 변경된 UTC 시각 |
-
-### 5.2 `PATCH /api/v1/tutor/settings`
-
-현재 사용자의 Tutor 활성화 상태를 변경한다.
-
-#### 요청 본문
-
-```json
-{
-  "tutor_enabled": false
-}
-```
-
-#### 응답 `200 OK`
-
-```json
-{
-  "tutor_enabled": false,
-  "updated_at": "2026-09-03T12:05:00Z"
-}
-```
-
-설정 변경 시 서버는 사용자의 다른 계정 설정을 덮어쓰지 않아야 한다. 사용자 식별자는
-요청 본문이 아니라 검증된 Access Token에서 가져온다.
-
-## 6. Tutor 선제 질문 — `IMPLEMENTED*`
+## 5. Tutor 선제 질문 — `IMPLEMENTED*`
 
 ### `POST /api/v1/tutor/proactive`
 
@@ -353,7 +361,7 @@ Authorization: Bearer <supabase_access_token>
 프론트엔드는 자막이 바뀔 때마다 호출하지 않고, 새로운 표현이 등장하거나 일정 시간
 간격이 지난 경우에만 호출한다.
 
-### 6.1 요청 헤더
+### 5.1 요청 헤더
 
 ```http
 Content-Type: application/json
@@ -362,9 +370,9 @@ Authorization: Bearer <supabase_access_token>
 ```
 
 현재 로컬 구현에서는 인증 헤더를 검사하지 않으며, 운영 전환 후 사용자별 선제 질문
-이력과 설정을 보호하기 위해 필수로 적용한다.
+이력을 보호하기 위해 필수로 적용한다.
 
-### 6.2 요청 본문
+### 5.2 요청 본문
 
 | 필드 | 타입 | 필수 | 제한·기본값 | 설명 |
 | --- | --- | --- | --- | --- |
@@ -375,7 +383,7 @@ Authorization: Bearer <supabase_access_token>
 | `last_question_id` | string/null | 아니오 | 기본 `null` | 마지막으로 표시한 선제 질문 ID |
 | `last_question_at` | number/null | 아니오 | 기본 `null` | 마지막 질문 표시 시점(초) |
 
-### 6.3 요청 예시
+### 5.3 요청 예시
 
 ```json
 {
@@ -394,7 +402,7 @@ Authorization: Bearer <supabase_access_token>
 }
 ```
 
-### 6.4 응답 `200 OK`
+### 5.4 응답 `200 OK`
 
 ```json
 {
@@ -422,25 +430,11 @@ Authorization: Bearer <supabase_access_token>
 | --- | --- |
 | `new_expression` | 새로 학습할 만한 표현 발견 |
 | `cooldown` | 직전 질문 이후 대기 시간 미충족 |
-| `disabled` | Tutor가 OFF 상태 |
 | `insufficient_context` | 판단에 필요한 자막 문맥 부족 |
 | `already_seen` | 동일 표현에 대해 이미 질문함 |
 | `paused` | 영상이 일시정지 또는 탐색 중 |
 
-### 6.5 Tutor OFF 응답
-
-```json
-{
-  "should_show": false,
-  "reason": "disabled",
-  "question_id": null,
-  "question": null,
-  "focus_word": null,
-  "expires_in_seconds": null
-}
-```
-
-### 6.6 호출 제어 정책
+### 5.5 호출 제어 정책
 
 - 같은 `video_id`와 가까운 timestamp에 선제 질문을 반복하지 않는다.
 - 질문 간 최소 cooldown은 초기 30~60초로 둔다.
@@ -449,12 +443,25 @@ Authorization: Bearer <supabase_access_token>
 - 문맥이 부족하면 LLM을 호출하지 않고 `insufficient_context`를 반환할 수 있다.
 - cooldown과 표시 이력은 Redis 또는 사용자별 저장소에 기록한다.
 
-## 7. Tutor 답변 Hover/Click — `IMPLEMENTED*`
+### 5.6 Tutor 요청 빈도 제한
+
+`TUTOR_REQUESTS_PER_MINUTE` 환경변수로 사용자별 `POST /api/v1/tutor/ask` 호출 상한을
+설정한다. 기본값은 30회/분이며 `0`이면 제한하지 않는다. 현재 인증 dependency가
+연결되지 않은 로컬 구현에서는 모든 요청이 `anonymous` actor 하나의 제한을 공유한다.
+제한을 초과하면 다음 오류를 반환한다.
+
+```json
+{
+  "detail": "Tutor 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
+}
+```
+
+## 6. Tutor 답변 Hover/Click — `IMPLEMENTED*`
 
 현재 `reply`와 함께 `reply_tokens`를 반환해 프론트엔드가 영어 학습 대상 단어를
 안정적으로 식별할 수 있다. 사전 조회와 단어 저장은 별도 도메인 API의 구현이 필요하다.
 
-### 7.1 `reply_tokens` 형식
+### 6.1 `reply_tokens` 형식
 
 ```json
 [
@@ -482,7 +489,7 @@ offset은 Chrome Extension과 JavaScript의 문자열 처리를 맞추기 위해
 프론트엔드는 모델 답변을 HTML로 직접 렌더링하지 않고, `reply` 원문과 token offset을
 이용해 안전하게 단어 요소를 생성한다.
 
-### 7.2 사전·단어장 연동
+### 6.2 사전·단어장 연동
 
 Hover/Click 기능을 완성하려면 다음 별도 도메인 API와 연동한다. 이 문서는 Tutor가
 해당 API를 어떻게 사용하는지만 정의하며, 사전·단어장 자체의 상세 계약은 해당 도메인
@@ -494,12 +501,13 @@ Hover/Click 기능을 완성하려면 다음 별도 도메인 API와 연동한�
 | Click | `GET /api/v1/dict/detail` | 상세 뜻·예문·관련 표현 표시 |
 | 저장 | `POST /api/v1/words/save` | 사용자가 선택한 단어를 단어장에 저장 |
 
-## 8. Tutor 답변 피드백 — `IMPLEMENTED*`
+## 7. Tutor 답변 피드백 — `IMPLEMENTED*`
 
 ### `POST /api/v1/tutor/feedback`
 
-사용자가 Tutor 답변의 유용성을 평가한 결과를 저장한다. 향후 프롬프트 개선과 답변 품질
-분석에 사용한다.
+사용자가 Tutor 답변의 유용성을 평가한 결과를 저장한다. 이 API는 Tutor가 생성한
+`conversation_id`와 `message_id`를 사용하므로 Tutor 도메인에 포함한다. 운영 단계의
+영구 저장과 RLS·소유권 검증은 사용자/DB 계층이 담당한다.
 
 ### 요청 헤더
 
@@ -529,7 +537,7 @@ Authorization: Bearer <supabase_access_token>
 | `conversation_id` | string | 예 | 최대 100자 | Tutor 대화 ID |
 | `message_id` | string | 예 | 최대 100자 | 평가할 Tutor 메시지 ID |
 | `rating` | string | 예 | `helpful` 또는 `not_helpful` | 답변 유용성 평가 |
-| `reason` | string/null | 아니오 | 최대 50자 | `incorrect`, `too_difficult`, `too_easy`, `irrelevant`, `other` |
+| `reason` | string/null | 아니오 | `incorrect`, `too_difficult`, `too_easy`, `irrelevant`, `other` | 부정 평가의 상세 사유 |
 | `comment` | string/null | 아니오 | 최대 1,000자 | 선택 의견 |
 
 ### 응답 `201 Created`
@@ -546,29 +554,33 @@ Authorization: Bearer <supabase_access_token>
 }
 ```
 
-피드백은 동일한 `message_id`에 대해 최신 평가로 갱신한다. 현재는 개발용 메모리에
+피드백은 사용자당 동일한 `message_id`에 한 번만 기록할 수 있다. 같은 답변에 다시
+평가를 보내면 기존 값을 바꾸지 않고 `409 Conflict`를 반환한다. 운영 DB도
+`UNIQUE (user_id, message_id)` 제약으로 이 규칙을 보장한다. 현재는 개발용 메모리에
 저장하며, 존재하지 않거나 다른 대화에 속한 메시지를 평가하면 `404`를 반환한다.
 
-## 9. 프론트엔드 연동 순서
+## 8. 프론트엔드 연동 순서
 
-### 9.1 현재 MVP
+### 8.1 현재 MVP
 
-1. Extension에서 현재 `video_id`, `timestamp`, 주변 자막을 수집한다.
-2. `POST /api/v1/tutor/ask`를 호출한다.
-3. 응답의 `reply`와 `suggested_questions`를 Tutor 채팅 UI에 표시한다.
-4. 응답의 `learner_level`, `tutor_difficulty`를 개발 중 개인화 결과 확인에 사용한다.
+1. Extension에서 현재 `video_id`, `timestamp`, 현재 자막과 앞 4줄·뒤 2줄을 수집한다.
+2. 자막을 `{ time, en, ko }`로 정규화해 `recent_subtitles`에 넣고 `POST /api/v1/tutor/ask`를 호출한다.
+3. 응답의 `context_subtitle_count`가 `0`이면 자막 문맥이 누락된 것이므로, 자막을 켜거나
+   자막이 있는 영상으로 바꾸도록 안내한다.
+4. 응답의 `reply`와 `suggested_questions`를 Tutor 채팅 UI에 표시한다.
+5. 응답의 `learner_level`, `tutor_difficulty`를 개발 중 개인화 결과 확인에 사용한다.
 
-### 9.2 요구사항 완성 단계
+### 8.2 요구사항 완성 단계
 
 1. Supabase Google 로그인 후 Access Token을 Tutor API에 전달한다.
-2. `GET/PATCH /api/v1/tutor/settings`로 Tutor ON/OFF 상태를 동기화한다.
+2. Extension의 로컬 설정으로 Tutor 패널·입력창·선제 질문 호출을 제어한다.
 3. 재생 이벤트를 cooldown 정책과 함께 `POST /api/v1/tutor/proactive`에 전달한다.
 4. `reply_tokens`를 기준으로 영어 답변에 Hover/Click 인터랙션을 부여한다.
 5. Hover는 간이 사전, Click은 상세 사전, 저장 버튼은 단어장 API와 연결한다.
 6. 답변 평가 버튼은 `/api/v1/tutor/feedback`을 호출한다.
 7. 학습 신호는 요청 본문이 아니라 인증된 사용자 ID로 DB에서 조회한다.
 
-## 10. 현재 구현과 목표 상태
+## 9. 현재 구현과 목표 상태
 
 | 항목 | 현재 | 목표 |
 | --- | --- | --- |
@@ -578,10 +590,10 @@ Authorization: Bearer <supabase_access_token>
 | 수준 판정 | 규칙 기반 A1~C1 추론 | 학습 기록과 피드백을 이용해 지속 개선 |
 | LLM provider | Gemini/Groq failover + stub fallback | 사용량 저장소·운영 모니터링 고도화 |
 | 선제 질문 | 규칙 기반 + 메모리 cooldown | `proactive` + Redis cooldown |
-| Tutor ON/OFF | anonymous actor 메모리 설정 | 사용자별 설정 저장 및 호출 차단 |
+| Tutor ON/OFF | Extension 로컬 설정 | 필요 시 사용자별 설정 동기화를 별도 기능으로 추가 |
 | Hover/Click | `reply_tokens` 반환 | 사전 API·단어장 API 연결 |
 | 대화 저장 | 최근 10턴 메모리 | Supabase 사용자별 저장 |
-| 답변 피드백 | 메모리 저장 | Supabase 저장 및 분석 |
+| 답변 피드백 | 메모리 저장 | Tutor API + Supabase 저장 및 분석 |
 
 현재 `IMPLEMENTED*` 항목은 실제 라우터에 등록되어 로컬 검증이 가능하다. 운영 전환 시
 Supabase Auth·DB·Redis를 연결하고 사용자별 소유권과 영구 저장을 검증한 뒤 별표를

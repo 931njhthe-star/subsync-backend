@@ -9,9 +9,12 @@ HTTP 라우터의 계약이 바뀌지 않도록 한다.
 from __future__ import annotations
 
 import re
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
+from typing import Callable
 from uuid import uuid4
 
 from app.ai.context_builder import (
@@ -85,14 +88,6 @@ _PROACTIVE_STOPWORDS = {
 
 
 @dataclass(frozen=True)
-class TutorSettingsState:
-    """한 사용자의 Tutor 활성화 설정."""
-
-    tutor_enabled: bool
-    updated_at: datetime
-
-
-@dataclass(frozen=True)
 class ProactiveDecision:
     """선제 질문 API가 반환할 판단 결과."""
 
@@ -144,39 +139,50 @@ class InMemoryTutorState:
     repository를 주입해야 한다.
     """
 
-    def __init__(self, *, proactive_cooldown_seconds: float = 45.0) -> None:
-        """기본 설정과 선제 질문 cooldown을 초기화한다."""
+    def __init__(
+        self,
+        *,
+        proactive_cooldown_seconds: float = 45.0,
+        requests_per_minute: int = 30,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """기본 설정, 선제 질문 cooldown, 요청 제한을 초기화한다.
+
+        ``clock``을 주입할 수 있게 해 실제 시간을 기다리지 않고 rate limit의
+        경계값을 테스트할 수 있다. 운영 환경에서는 이 메모리 제한을 Redis 기반
+        제한기로 교체하되, 호출하는 라우터 계약은 유지한다.
+        """
 
         self.proactive_cooldown_seconds = max(proactive_cooldown_seconds, 0.0)
-        self._settings: dict[str, TutorSettingsState] = {}
+        self.requests_per_minute = max(requests_per_minute, 0)
+        self._clock = clock
         self._conversations: dict[tuple[str, str], _ConversationState] = {}
         self._proactive: dict[tuple[str, str], _ProactiveState] = {}
         self._feedback: dict[tuple[str, str], TutorFeedbackRecord] = {}
+        self._request_timestamps: dict[str, deque[float]] = {}
         self._lock = RLock()
 
-    def get_settings(self, actor_id: str) -> TutorSettingsState:
-        """사용자 설정을 조회하고, 최초 조회 시 Tutor ON 기본값을 만든다."""
+    def allow_request(self, actor_id: str) -> bool:
+        """분당 Tutor 질문 제한 안에 있으면 요청을 소비하고 ``True``를 반환한다.
 
+        반환값이 ``False``이면 호출자가 `429 Too Many Requests`를 반환해야 한다.
+        사용자 로그인 전에는 actor가 ``anonymous`` 하나이므로 로컬 개발용 보호
+        장치로 동작하고, Auth 연결 후에는 JWT의 `sub`별로 분리된다.
+        """
+
+        if self.requests_per_minute <= 0:
+            return True
+
+        now = self._clock()
         with self._lock:
-            state = self._settings.get(actor_id)
-            if state is None:
-                state = TutorSettingsState(
-                    tutor_enabled=True,
-                    updated_at=datetime.now(timezone.utc),
-                )
-                self._settings[actor_id] = state
-            return state
-
-    def set_tutor_enabled(self, actor_id: str, enabled: bool) -> TutorSettingsState:
-        """사용자별 Tutor ON/OFF 상태를 변경한다."""
-
-        with self._lock:
-            state = TutorSettingsState(
-                tutor_enabled=enabled,
-                updated_at=datetime.now(timezone.utc),
-            )
-            self._settings[actor_id] = state
-            return state
+            timestamps = self._request_timestamps.setdefault(actor_id, deque())
+            cutoff = now - 60.0
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            if len(timestamps) >= self.requests_per_minute:
+                return False
+            timestamps.append(now)
+            return True
 
     def get_conversation_history(
         self,
@@ -200,6 +206,21 @@ class InMemoryTutorState:
             if limit <= 0:
                 return ()
             return tuple(state.turns[-max(limit, 0) :])
+
+    def get_conversation_video_id(
+        self,
+        actor_id: str,
+        conversation_id: str,
+    ) -> str | None:
+        """사용자 대화의 원래 영상 ID를 반환하거나, 대화가 없으면 ``None``을 반환한다.
+
+        한 대화 ID를 다른 영상에 재사용하면 문맥이 섞일 수 있으므로 API 계층에서
+        이어받는 요청의 ``video_id``를 검증하는 데 사용한다.
+        """
+
+        with self._lock:
+            state = self._conversations.get((actor_id, conversation_id))
+            return state.video_id if state is not None else None
 
     def record_exchange(
         self,
@@ -260,7 +281,7 @@ class InMemoryTutorState:
                 if stored_actor == actor_id
             )
 
-    def record_feedback(
+    def create_feedback(
         self,
         *,
         actor_id: str,
@@ -269,10 +290,18 @@ class InMemoryTutorState:
         rating: str,
         reason: str | None = None,
         comment: str | None = None,
-    ) -> TutorFeedbackRecord:
-        """메시지별 최신 피드백을 저장하고 저장 결과를 반환한다."""
+    ) -> TutorFeedbackRecord | None:
+        """메시지별 첫 피드백만 저장하고, 이미 있으면 ``None``을 반환한다.
+
+        확인과 저장을 하나의 lock 안에서 처리해 동시에 들어온 두 요청도 둘 다
+        성공하지 않게 한다. 운영 DB에서도 ``UNIQUE (user_id, message_id)`` 제약으로
+        같은 규칙을 보장해야 한다.
+        """
 
         with self._lock:
+            key = (actor_id, message_id)
+            if key in self._feedback:
+                return None
             record = TutorFeedbackRecord(
                 feedback_id=f"fb_{uuid4().hex[:12]}",
                 conversation_id=conversation_id,
@@ -282,7 +311,7 @@ class InMemoryTutorState:
                 comment=comment,
                 created_at=datetime.now(timezone.utc),
             )
-            self._feedback[(actor_id, message_id)] = record
+            self._feedback[key] = record
             return record
 
     def decide_proactive(
@@ -302,9 +331,6 @@ class InMemoryTutorState:
         영어 단어 하나를 선택한다. 이 방식은 자막이 갱신될 때마다 발생하는
         불필요한 token 사용을 줄이며, 이후 별도 후보 평가 모델로 교체할 수 있다.
         """
-
-        if not self.get_settings(actor_id).tutor_enabled:
-            return _hidden_proactive_decision("disabled")
 
         if playback_state in {"paused", "seeking"}:
             return _hidden_proactive_decision("paused")
@@ -358,10 +384,10 @@ class InMemoryTutorState:
         """개발용 상태를 비운다. 테스트 격리와 로컬 재현에 사용한다."""
 
         with self._lock:
-            self._settings.clear()
             self._conversations.clear()
             self._proactive.clear()
             self._feedback.clear()
+            self._request_timestamps.clear()
 
 
 def _pick_focus_word(english: str) -> str | None:
@@ -384,5 +410,4 @@ __all__ = [
     "InMemoryTutorState",
     "ProactiveDecision",
     "TutorFeedbackRecord",
-    "TutorSettingsState",
 ]

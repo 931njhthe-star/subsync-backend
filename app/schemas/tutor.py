@@ -170,19 +170,6 @@ class TutorAskResponse(BaseModel):
     )
 
 
-class TutorSettingsUpdateRequest(BaseModel):
-    """Tutor 기능 활성화 상태를 변경하는 요청."""
-
-    tutor_enabled: bool = Field(description="Tutor 기능 활성화 여부")
-
-
-class TutorSettingsResponse(BaseModel):
-    """현재 사용자의 Tutor 설정 응답."""
-
-    tutor_enabled: bool = Field(description="Tutor 기능 활성화 여부")
-    updated_at: datetime = Field(description="설정이 마지막으로 변경된 UTC 시각")
-
-
 class ProactiveTutorRequest(BaseModel):
     """Tutor가 먼저 학습 질문을 제안할 때 필요한 영상 상태."""
 
@@ -215,7 +202,6 @@ class ProactiveTutorResponse(BaseModel):
     reason: Literal[
         "new_expression",
         "cooldown",
-        "disabled",
         "insufficient_context",
         "already_seen",
         "paused",

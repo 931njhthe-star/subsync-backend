@@ -28,8 +28,6 @@ from app.schemas.tutor import (
     TutorAskResponse,
     TutorFeedbackRequest,
     TutorFeedbackResponse,
-    TutorSettingsResponse,
-    TutorSettingsUpdateRequest,
     TutorUsageResponse,
 )
 
@@ -57,13 +55,14 @@ def get_usage_tracker() -> InMemoryUsageTracker:
 def get_tutor_state() -> InMemoryTutorState:
     """프로세스에서 공유할 개발용 Tutor 상태 저장소를 생성한다.
 
-    대화·설정·선제 질문 이력·피드백을 요청 사이에 유지하려면 매 요청마다 새
+    대화·선제 질문 이력·피드백을 요청 사이에 유지하려면 매 요청마다 새
     저장소를 만들면 안 된다. 실제 사용자별 영구 저장소가 연결되면 이 dependency를
     Supabase/Redis repository로 교체한다.
     """
 
     return InMemoryTutorState(
         proactive_cooldown_seconds=settings.tutor_proactive_cooldown_seconds,
+        requests_per_minute=settings.tutor_requests_per_minute,
     )
 
 
@@ -137,10 +136,10 @@ async def ask_tutor(
         서버가 학습 신호를 조회해야 한다.
     """
 
-    if not state.get_settings(_DEVELOPMENT_ACTOR_ID).tutor_enabled:
+    if not state.allow_request(_DEVELOPMENT_ACTOR_ID):
         raise HTTPException(
-            status_code=409,
-            detail="Tutor가 비활성화되어 있습니다.",
+            status_code=429,
+            detail="Tutor 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
         )
 
     signals = request.learner_signals
@@ -150,6 +149,20 @@ async def ask_tutor(
             _DEVELOPMENT_ACTOR_ID,
             request.conversation_id,
         )
+        stored_video_id = state.get_conversation_video_id(
+            _DEVELOPMENT_ACTOR_ID,
+            request.conversation_id,
+        )
+        if stored_video_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="이어갈 Tutor 대화를 찾을 수 없습니다.",
+            )
+        if stored_video_id != request.video_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Tutor 대화와 영상 ID가 일치하지 않습니다.",
+            )
     # 저장된 대화가 있으면 서버 이력을 우선한다. 아직 저장된 대화가 없는 최초
     # 요청만 클라이언트가 보낸 history를 사용해 대화를 초기화한다.
     conversation_history = (
@@ -229,40 +242,6 @@ async def ask_tutor(
     )
 
 
-@router.get("/settings", response_model=TutorSettingsResponse)
-def get_tutor_settings(
-    state: InMemoryTutorState = Depends(get_tutor_state),
-) -> TutorSettingsResponse:
-    """개발용 actor의 Tutor ON/OFF 설정을 조회한다.
-
-    현재는 Supabase Auth가 연결되지 않아 모든 로컬 요청이 anonymous actor로
-    처리된다. 운영 전환 시 인증 dependency에서 사용자 ID를 주입해야 한다.
-    """
-
-    current = state.get_settings(_DEVELOPMENT_ACTOR_ID)
-    return TutorSettingsResponse(
-        tutor_enabled=current.tutor_enabled,
-        updated_at=current.updated_at,
-    )
-
-
-@router.patch("/settings", response_model=TutorSettingsResponse)
-def update_tutor_settings(
-    request: TutorSettingsUpdateRequest,
-    state: InMemoryTutorState = Depends(get_tutor_state),
-) -> TutorSettingsResponse:
-    """개발용 actor의 Tutor ON/OFF 설정을 변경한다."""
-
-    updated = state.set_tutor_enabled(
-        _DEVELOPMENT_ACTOR_ID,
-        request.tutor_enabled,
-    )
-    return TutorSettingsResponse(
-        tutor_enabled=updated.tutor_enabled,
-        updated_at=updated.updated_at,
-    )
-
-
 @router.post("/proactive", response_model=ProactiveTutorResponse)
 def proactive_tutor_question(
     request: ProactiveTutorRequest,
@@ -309,7 +288,11 @@ def create_tutor_feedback(
     request: TutorFeedbackRequest,
     state: InMemoryTutorState = Depends(get_tutor_state),
 ) -> TutorFeedbackResponse:
-    """Tutor 답변 평가를 개발용 메모리 저장소에 기록한다."""
+    """Tutor 답변 평가를 개발용 메모리 저장소에 기록한다.
+
+    운영 환경에서는 사용자/DB 계층이 JWT의 ``sub``로 메시지 소유권을 확인하고
+    영구 저장소에 기록한다. Tutor 라우터는 답변과 평가의 연결 계약만 유지한다.
+    """
 
     if not state.has_message(
         _DEVELOPMENT_ACTOR_ID,
@@ -321,7 +304,7 @@ def create_tutor_feedback(
             detail="평가할 Tutor 메시지를 찾을 수 없습니다.",
         )
 
-    record = state.record_feedback(
+    record = state.create_feedback(
         actor_id=_DEVELOPMENT_ACTOR_ID,
         conversation_id=request.conversation_id,
         message_id=request.message_id,
@@ -329,6 +312,11 @@ def create_tutor_feedback(
         reason=request.reason,
         comment=request.comment,
     )
+    if record is None:
+        raise HTTPException(
+            status_code=409,
+            detail="이 Tutor 답변에는 이미 피드백을 남겼습니다.",
+        )
     return TutorFeedbackResponse(
         feedback_id=record.feedback_id,
         conversation_id=record.conversation_id,
