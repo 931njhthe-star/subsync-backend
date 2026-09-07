@@ -110,34 +110,6 @@ class InMemoryUsageTracker:
                 if record.provider == provider and record.recorded_at >= cutoff
             )
 
-    def records(self) -> tuple[UsageRecord, ...]:
-        """만료되지 않은 usage record를 시간순 tuple로 반환한다."""
-
-        now = self._clock()
-        with self._lock:
-            self._purge_locked(now)
-            return tuple(self._records)
-
-    def snapshot(self) -> dict[str, dict[str, int]]:
-        """provider별 요청 수와 누적 token을 로컬 디버깅용으로 반환한다."""
-
-        snapshot: dict[str, dict[str, int]] = {}
-        for record in self.records():
-            current = snapshot.setdefault(
-                record.provider,
-                {
-                    "requests": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                },
-            )
-            current["requests"] += 1
-            current["input_tokens"] += record.input_tokens
-            current["output_tokens"] += record.output_tokens
-            current["total_tokens"] += record.total_tokens
-        return snapshot
-
     def _purge_locked(self, now: float) -> None:
         """보관 기간이 지난 record를 lock을 획득한 상태에서 제거한다."""
 
@@ -149,7 +121,6 @@ class InMemoryUsageTracker:
 
 __all__ = [
     "InMemoryUsageTracker",
-    "UsageRecord",
     "estimate_prompt_tokens",
     "estimate_tokens",
 ]

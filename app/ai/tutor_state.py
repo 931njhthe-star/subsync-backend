@@ -85,6 +85,39 @@ _PROACTIVE_STOPWORDS = {
     "you",
     "your",
 }
+_GENERIC_PROACTIVE_WORDS = {
+    "also",
+    "because",
+    "does",
+    "every",
+    "first",
+    "get",
+    "gets",
+    "getting",
+    "go",
+    "goes",
+    "going",
+    "look",
+    "looks",
+    "make",
+    "makes",
+    "making",
+    "need",
+    "needs",
+    "one",
+    "problem",
+    "really",
+    "said",
+    "say",
+    "says",
+    "thing",
+    "think",
+    "thought",
+    "value",
+    "want",
+    "wants",
+}
+_PHRASE_TAILS = {"about", "for", "from", "into", "of", "on", "to", "with"}
 
 
 @dataclass(frozen=True)
@@ -125,9 +158,9 @@ class _ConversationState:
 class _ProactiveState:
     """영상별 선제 질문 cooldown·표시 이력."""
 
-    last_question_id: str | None = None
     last_question_at: float | None = None
     seen_focus_words: set[str] = field(default_factory=set)
+    questions: dict[str, str] = field(default_factory=dict)
 
 
 class InMemoryTutorState:
@@ -142,7 +175,8 @@ class InMemoryTutorState:
     def __init__(
         self,
         *,
-        proactive_cooldown_seconds: float = 45.0,
+        proactive_cooldown_seconds: float = 180.0,
+        proactive_max_questions_per_video: int = 3,
         requests_per_minute: int = 30,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -154,6 +188,10 @@ class InMemoryTutorState:
         """
 
         self.proactive_cooldown_seconds = max(proactive_cooldown_seconds, 0.0)
+        self.proactive_max_questions_per_video = max(
+            proactive_max_questions_per_video,
+            0,
+        )
         self.requests_per_minute = max(requests_per_minute, 0)
         self._clock = clock
         self._conversations: dict[tuple[str, str], _ConversationState] = {}
@@ -184,43 +222,22 @@ class InMemoryTutorState:
             timestamps.append(now)
             return True
 
-    def get_conversation_history(
+    def get_conversation(
         self,
         actor_id: str,
         conversation_id: str,
-        *,
-        limit: int = 10,
-    ) -> tuple[ConversationTurn, ...] | None:
-        """사용자 소유로 확인된 대화의 최근 이력을 반환한다.
+    ) -> tuple[str, tuple[ConversationTurn, ...]] | None:
+        """대화의 영상 ID와 최근 이력을 함께 반환한다.
 
-        Returns:
-            대화가 존재하면 최근 이력 tuple을, 존재하지 않으면 ``None``을 반환한다.
-            빈 대화와 존재하지 않는 대화를 구분해야 잘못된 conversation ID를
-            조용히 새 대화로 바꾸지 않을 수 있다.
+        존재하지 않는 대화와 비어 있는 대화를 구분하고, 한 번의 lock 안에서
+        video ID와 이력을 읽어 이어가기 요청의 문맥이 섞이지 않게 한다.
         """
 
         with self._lock:
             state = self._conversations.get((actor_id, conversation_id))
             if state is None:
                 return None
-            if limit <= 0:
-                return ()
-            return tuple(state.turns[-max(limit, 0) :])
-
-    def get_conversation_video_id(
-        self,
-        actor_id: str,
-        conversation_id: str,
-    ) -> str | None:
-        """사용자 대화의 원래 영상 ID를 반환하거나, 대화가 없으면 ``None``을 반환한다.
-
-        한 대화 ID를 다른 영상에 재사용하면 문맥이 섞일 수 있으므로 API 계층에서
-        이어받는 요청의 ``video_id``를 검증하는 데 사용한다.
-        """
-
-        with self._lock:
-            state = self._conversations.get((actor_id, conversation_id))
-            return state.video_id if state is not None else None
+            return state.video_id, tuple(state.turns[-10:])
 
     def record_exchange(
         self,
@@ -263,23 +280,17 @@ class InMemoryTutorState:
         self,
         actor_id: str,
         message_id: str,
-        conversation_id: str | None = None,
+        conversation_id: str,
     ) -> bool:
         """사용자 대화에 평가 대상 메시지가 존재하는지 확인한다.
 
-        ``conversation_id``가 전달되면 메시지가 해당 대화에 속하는지도 함께
-        검증해 서로 다른 대화 ID를 조합한 피드백을 막는다.
+        메시지가 해당 대화에 속하는지도 함께 검증해 서로 다른 대화 ID를 조합한
+        피드백을 막는다.
         """
 
         with self._lock:
-            if conversation_id is not None:
-                state = self._conversations.get((actor_id, conversation_id))
-                return state is not None and message_id in state.message_ids
-            return any(
-                message_id in state.message_ids
-                for (stored_actor, _), state in self._conversations.items()
-                if stored_actor == actor_id
-            )
+            state = self._conversations.get((actor_id, conversation_id))
+            return state is not None and message_id in state.message_ids
 
     def create_feedback(
         self,
@@ -322,7 +333,6 @@ class InMemoryTutorState:
         timestamp: float,
         subtitles: tuple[SubtitleLine, ...],
         playback_state: str,
-        last_question_id: str | None = None,
         last_question_at: float | None = None,
     ) -> ProactiveDecision:
         """현재 영상 문맥에서 선제 질문을 표시할지 결정한다.
@@ -352,6 +362,11 @@ class InMemoryTutorState:
         with self._lock:
             key = (actor_id, video_id)
             state = self._proactive.setdefault(key, _ProactiveState())
+            if (
+                len(state.seen_focus_words)
+                >= self.proactive_max_questions_per_video
+            ):
+                return _hidden_proactive_decision("max_questions_reached")
             previous_timestamp = state.last_question_at
             if previous_timestamp is None:
                 previous_timestamp = last_question_at
@@ -367,9 +382,9 @@ class InMemoryTutorState:
                 return _hidden_proactive_decision("already_seen")
 
             question_id = f"pq_{uuid4().hex[:12]}"
-            state.last_question_id = question_id
             state.last_question_at = timestamp
             state.seen_focus_words.add(normalized_focus)
+            state.questions[question_id] = focus_word
 
         return ProactiveDecision(
             should_show=True,
@@ -379,6 +394,24 @@ class InMemoryTutorState:
             focus_word=focus_word,
             expires_in_seconds=30,
         )
+
+    def get_proactive_focus_word(
+        self,
+        actor_id: str,
+        video_id: str,
+        question_id: str,
+    ) -> str | None:
+        """선제 질문 ID에 저장된 원래 표현을 반환한다.
+
+        클라이언트가 임의의 focus word를 보내도 Tutor가 낸 질문과 다른 표현을
+        채점하지 않도록 서버가 발급한 ID를 기준으로 확인한다.
+        """
+
+        with self._lock:
+            state = self._proactive.get((actor_id, video_id))
+            if state is None:
+                return None
+            return state.questions.get(question_id)
 
     def reset(self) -> None:
         """개발용 상태를 비운다. 테스트 격리와 로컬 재현에 사용한다."""
@@ -391,11 +424,24 @@ class InMemoryTutorState:
 
 
 def _pick_focus_word(english: str) -> str | None:
-    """현재 자막에서 조사할 만한 첫 번째 영어 단어를 고른다."""
+    """일반 단어 대신 학습할 만한 구문 또는 긴 표현만 고른다."""
 
-    for match in _ENGLISH_WORD_RE.finditer(english):
-        word = match.group(0)
-        if len(word) >= 4 and word.casefold() not in _PROACTIVE_STOPWORDS:
+    words = [match.group(0) for match in _ENGLISH_WORD_RE.finditer(english)]
+    for index, word in enumerate(words):
+        normalized = word.casefold()
+        if normalized in _PROACTIVE_STOPWORDS | _GENERIC_PROACTIVE_WORDS:
+            continue
+        next_word = words[index + 1] if index + 1 < len(words) else None
+        if len(word) >= 6 and next_word and next_word.casefold() in _PHRASE_TAILS:
+            return f"{word} {next_word}"
+        if (
+            len(word) >= 6
+            and word.casefold().endswith("ly")
+            and next_word
+            and next_word.casefold() not in _PROACTIVE_STOPWORDS
+        ):
+            return f"{word} {next_word}"
+        if len(word) >= 8:
             return word
     return None
 

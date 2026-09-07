@@ -3,7 +3,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.ai.reply_tokenizer import extract_reply_tokens
 from app.ai.context_builder import SubtitleLine, build_tutor_context
 from app.ai.learner_profile import (
     CEFRLevel,
@@ -102,6 +101,26 @@ def test_prompt_marks_subtitles_as_reference_data():
     assert "신뢰할 수 없는\n참고 데이터" in prompt.system_instruction
     assert "Be honest with yourself." in prompt.user_prompt
     assert "튜터 답변 난이도: 안내형" in prompt.system_instruction
+    assert "한 번에 영어 표현 하나만 설명" in prompt.system_instruction
+    assert "suggested_questions는 항상 빈 배열" in prompt.system_instruction
+
+
+def test_proactive_answer_prompt_requests_structured_grading():
+    """선제 질문 답안에는 정답 기준을 반환하도록 provider에 지시한다."""
+
+    context = build_tutor_context(
+        video_id="video-1",
+        timestamp=20,
+        user_message="솔직하게 말한다는 뜻이에요.",
+        subtitles=[SubtitleLine(20, "Be honest with yourself.", "너 자신에게 솔직해.")],
+        focus_word="honest with",
+        is_proactive_answer=True,
+    )
+    prompt = build_tutor_prompt(context, infer_learner_profile(LearnerSignals()))
+
+    assert "선제 질문 답안 판정" in prompt.system_instruction
+    assert "correct, partial, incorrect" in prompt.system_instruction
+    assert '"proactive_feedback"' in prompt.system_instruction
 
 
 def test_tutor_api_works_without_gemini_key():
@@ -134,19 +153,7 @@ def test_tutor_api_works_without_gemini_key():
     assert body["context_subtitle_count"] == 1
     assert "honest" in body["reply"]
     assert body["message_id"].startswith("msg_")
-    assert body["reply_tokens"]
-
-
-def test_reply_tokens_use_javascript_compatible_utf16_offsets():
-    """이모지처럼 2개의 UTF-16 unit을 차지하는 문자가 있어도 offset이 맞아야 한다."""
-
-    tokens = extract_reply_tokens("😀 honest")
-
-    assert len(tokens) == 1
-    assert tokens[0].surface == "honest"
-    assert tokens[0].normalized == "honest"
-    assert tokens[0].start == 3
-    assert tokens[0].end == 9
+    assert "reply_tokens" not in body
 
 
 def test_tutor_conversation_id_reuses_in_memory_history():
@@ -178,8 +185,9 @@ def test_tutor_conversation_id_reuses_in_memory_history():
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["conversation_id"] == conversation_id
-    history = get_tutor_state().get_conversation_history("anonymous", conversation_id)
-    assert history is not None
+    conversation = get_tutor_state().get_conversation("anonymous", conversation_id)
+    assert conversation is not None
+    _, history = conversation
     assert len(history) == 4
     assert history[-1].role == "tutor"
 
@@ -297,13 +305,110 @@ def test_proactive_question_applies_cooldown_and_seen_word_guard():
     )
     third = client.post(
         "/api/v1/tutor/proactive",
-        json={**payload, "timestamp": 100},
+        json={**payload, "timestamp": 200},
     )
 
     assert first.json()["should_show"] is True
-    assert first.json()["focus_word"] == "honest"
+    assert first.json()["focus_word"] == "honest with"
     assert second.json()["reason"] == "cooldown"
     assert third.json()["reason"] == "already_seen"
+
+
+def test_proactive_answer_returns_feedback_for_the_original_question():
+    """선제 질문 ID로 연결한 답만 판정 결과를 받는지 확인한다."""
+
+    proactive = client.post(
+        "/api/v1/tutor/proactive",
+        json={
+            "video_id": "answer-video",
+            "timestamp": 10,
+            "recent_subtitles": [
+                {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
+            ],
+        },
+    )
+    question_id = proactive.json()["question_id"]
+    response = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "answer-video",
+            "timestamp": 10,
+            "user_message": "솔직하게 말한다는 뜻이에요.",
+            "focus_word": "다른 표현",
+            "proactive_question_id": question_id,
+            "recent_subtitles": [
+                {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
+            ],
+        },
+    )
+
+    assert proactive.status_code == 200
+    assert proactive.json()["focus_word"] == "honest with"
+    assert response.status_code == 200
+    feedback = response.json()["proactive_feedback"]
+    assert feedback is not None
+    assert feedback["result"] == "unavailable"
+    assert "stub provider" in feedback["criteria"]
+    assert "honest with" in response.json()["reply"]
+
+
+def test_unknown_proactive_question_is_rejected():
+    """다른 영상이나 존재하지 않는 선제 질문은 채점 대상으로 쓰지 않는다."""
+
+    response = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "answer-video",
+            "timestamp": 10,
+            "user_message": "답",
+            "proactive_question_id": "pq_missing",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "답변할 Tutor 선제 질문을 찾을 수 없습니다."
+
+
+def test_proactive_question_skips_generic_words_and_stops_after_video_limit():
+    """일반 단어는 건너뛰고 영상별 질문 상한을 지키는지 확인한다."""
+
+    from app.ai.tutor_state import InMemoryTutorState
+
+    state = InMemoryTutorState(
+        proactive_cooldown_seconds=0,
+        proactive_max_questions_per_video=3,
+    )
+
+    generic = state.decide_proactive(
+        actor_id="user-1",
+        video_id="video-1",
+        timestamp=0,
+        subtitles=(SubtitleLine(0, "I think the problem goes on."),),
+        playback_state="playing",
+    )
+    assert generic.reason == "insufficient_context"
+
+    for timestamp, subtitle in enumerate(
+        ("Be honest with me.", "We visually track changes.", "A representation helps."),
+        start=1,
+    ):
+        decision = state.decide_proactive(
+            actor_id="user-1",
+            video_id="video-1",
+            timestamp=timestamp,
+            subtitles=(SubtitleLine(timestamp, subtitle),),
+            playback_state="playing",
+        )
+        assert decision.should_show is True
+
+    limited = state.decide_proactive(
+        actor_id="user-1",
+        video_id="video-1",
+        timestamp=4,
+        subtitles=(SubtitleLine(4, "Remarkable details matter."),),
+        playback_state="playing",
+    )
+    assert limited.reason == "max_questions_reached"
 
 
 def test_tutor_feedback_is_recorded_for_an_existing_message():
@@ -591,7 +696,7 @@ def test_provider_router_falls_back_to_groq_on_quota_error():
     assert result.answer.provider == "groq"
     assert result.answer.model == "openai/gpt-oss-20b"
     assert result.answer.usage.normalized_total == 120
-    assert tracker.snapshot()["groq"]["total_tokens"] == 120
+    assert tracker.total_tokens("groq") == 120
 
 
 def test_provider_router_skips_provider_at_local_token_limit():

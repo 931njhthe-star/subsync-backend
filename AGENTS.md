@@ -39,10 +39,7 @@
 app/
 ├── api/v1/       HTTP 라우터: 입력 수신, dependency 주입, HTTP 상태 코드 반환
 ├── schemas/      Pydantic 요청·응답 DTO 및 유효성 검증
-├── services/     인증·사전·단어장·로그 등 일반 도메인 비즈니스 로직
 ├── ai/           Tutor 문맥, 프로필, 프롬프트, provider, fallback, 사용량 처리
-├── db/           Supabase 연결 및 repository/storage 구현
-├── cache/        Redis 연결·캐시 정책
 ├── core/         환경 설정, 보안, 공통 인프라
 └── main.py       앱 생성, 미들웨어, router 등록만 담당
 
@@ -56,8 +53,8 @@ postman/          공유 가능한 Collection·Environment JSON
 dashboard/        Streamlit 운영·분석 화면
 ```
 
-라우터에 DB/LLM 세부 로직을 넣지 않는다. 요청/응답 스키마는 `schemas/`에 두고,
-외부 서비스 호출은 `ai/`, `db/`, `cache/` 또는 해당 service를 통해 수행한다.
+라우터에 LLM 세부 로직을 넣지 않는다. 요청/응답 스키마는 `schemas/`에 두고,
+Tutor 문맥 구성과 외부 provider 호출은 `ai/`를 통해 수행한다.
 
 ## 3. 팀 담당 영역과 인수인계 계약
 
@@ -181,7 +178,7 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
 
 1. `app/schemas/`에 요청·응답 DTO와 검증 규칙을 작성한다.
 2. `app/api/v1/`에 라우터를 구현하고 `app/main.py`에 등록한다.
-3. 도메인 로직은 `services/` 또는 `ai/`로 분리한다.
+3. Tutor 도메인 로직은 `ai/`로 분리한다.
 4. 서버를 실행해 `/openapi.json`에 경로, 인증, 요청·응답 스키마가 의도대로 노출되는지
    확인한다. 라우터 docstring은 동작과 중요한 부작용을 설명한다.
 5. `postman/SubSync-API.postman_collection.json`에 요청을 추가하거나 수정한다.

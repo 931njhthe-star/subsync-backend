@@ -64,6 +64,15 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 `429` 응답 또는 로컬 quota 도달 시 다음 provider로 전환합니다. 세부 동작은
 `app/ai/`의 docstring과 `tests/test_tutor.py`에서 확인합니다.
 
+선제 질문은 기본적으로 영상 시점 기준 180초 간격이며, 영상당 3회까지만 표시합니다.
+`/api/v1/tutor/proactive`가 반환한 `focus_word`에 답하는 요청은
+`/api/v1/tutor/ask`의 같은 이름 필드에 그대로 넣어야 Tutor가 다른 표현으로
+설명 범위를 넓히지 않습니다. 선제 질문에 답할 때는 `question_id`를
+`proactive_question_id`로 보내면 서버가 원래 `focus_word`를 복원하고,
+응답의 `proactive_feedback`에서 `correct`(정답), `partial`(부분 정답),
+`incorrect`(오답)와 그 판단 기준을 받을 수 있습니다. `LLM_PROVIDER=stub`에서는
+의미 판정이 불가능하므로 `unavailable`을 반환합니다.
+
 ## 문서
 
 - [문서 인덱스](docs/README.md)
@@ -73,6 +82,6 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 ## 개발 원칙
 
 - API 변경은 Pydantic DTO, Postman Collection, 테스트를 함께 갱신하고 `/docs`에서 확인합니다.
-- 요청·응답 검증은 `schemas/`, 도메인 로직은 `services/`, 외부 연동은 `ai/`, `db/`, `cache/`에 둡니다.
+- 요청·응답 검증은 `app/schemas/`, Tutor 도메인 로직과 외부 LLM 연동은 `app/ai/`에 둡니다.
 - 의존성 추가·갱신은 `uv add` 또는 `uv add --dev`로 수행하고, 생성된 `uv.lock`은 함께 커밋합니다.
 - 민감 정보와 로컬 데이터는 `.gitignore`로 제외합니다.

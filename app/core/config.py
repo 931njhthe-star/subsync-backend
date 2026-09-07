@@ -1,7 +1,6 @@
 """애플리케이션 설정.
 
-환경변수로부터 API 주소, DB 접속정보, 외부 API Key 등을 로드한다.
-개발/운영 환경은 환경변수로 분리한다.
+환경변수로부터 Video Tutor 실행 설정과 외부 LLM 키를 로드한다.
 """
 
 import os
@@ -23,6 +22,9 @@ class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
+    tutor_max_output_tokens: int = int(
+        os.getenv("TUTOR_MAX_OUTPUT_TOKENS", "300")
+    )
     gemini_daily_token_limit: int = int(
         os.getenv("GEMINI_DAILY_TOKEN_LIMIT", "0")
     )
@@ -39,9 +41,13 @@ class Settings:
     groq_minute_token_limit: int = int(
         os.getenv("GROQ_MINUTE_TOKEN_LIMIT", "7000")
     )
-    # 선제 질문은 재생 이벤트마다 LLM을 호출하지 않도록 영상 시점 기준 cooldown을 둔다.
+    # 선제 질문은 학습 흐름을 방해하지 않도록 영상 시점 기준으로 충분한 간격을 둔다.
     tutor_proactive_cooldown_seconds: float = float(
-        os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "45")
+        os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "180")
+    )
+    # 영상당 선제 질문 수를 제한한다. 0이면 선제 질문을 표시하지 않는다.
+    tutor_proactive_max_questions_per_video: int = int(
+        os.getenv("TUTOR_PROACTIVE_MAX_QUESTIONS_PER_VIDEO", "3")
     )
     # 로그인 연동 전에는 anonymous actor별로, 운영 전환 후에는 사용자별로
     # 분당 Tutor 질문 수를 제한해 실수나 비용 폭증을 막는다. 0은 제한 없음이다.

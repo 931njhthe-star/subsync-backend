@@ -35,6 +35,7 @@ class TutorAskCommand:
     learner_signals: LearnerSignals = LearnerSignals()
     conversation_history: tuple[ConversationTurn, ...] = ()
     focus_word: str | None = None
+    is_proactive_answer: bool = False
     conversation_id: str | None = None
 
 
@@ -47,6 +48,15 @@ class TutorAnswer:
     provider: str
     model: str = ""
     usage: TokenUsage = TokenUsage()
+    proactive_feedback: ProactiveAnswerFeedback | None = None
+
+
+@dataclass(frozen=True)
+class ProactiveAnswerFeedback:
+    """Tutor 선제 질문에 대한 사용자의 답 판정과 기준."""
+
+    result: str
+    criteria: str
 
 
 @dataclass(frozen=True)
@@ -63,7 +73,12 @@ class TutorResult:
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 
-def _parse_model_response(raw: str, fallback: TutorAnswer) -> TutorAnswer:
+def _parse_model_response(
+    raw: str,
+    fallback: TutorAnswer,
+    *,
+    expects_proactive_feedback: bool = False,
+) -> TutorAnswer:
     """모델 원문을 Tutor 응답 shape으로 정규화한다.
 
     모델이 JSON만 반환하도록 요청하더라도 provider에 따라 code fence나 앞뒤
@@ -108,10 +123,27 @@ def _parse_model_response(raw: str, fallback: TutorAnswer) -> TutorAnswer:
         if len(clean_suggestions) == 3:
             break
 
+    feedback = None
+    if expects_proactive_feedback:
+        value = parsed.get("proactive_feedback")
+        if isinstance(value, dict):
+            result = value.get("result")
+            criteria = value.get("criteria")
+            if (
+                result in {"correct", "partial", "incorrect", "unavailable"}
+                and isinstance(criteria, str)
+                and criteria.strip()
+            ):
+                feedback = ProactiveAnswerFeedback(
+                    result=result,
+                    criteria=criteria.strip()[:500],
+                )
+
     return TutorAnswer(
         reply=reply.strip()[:4_000],
         suggested_questions=tuple(clean_suggestions),
         provider=fallback.provider,
+        proactive_feedback=feedback,
     )
 
 
@@ -127,6 +159,37 @@ def _coerce_generation(raw: str | LLMGeneration, client: LLMClient) -> LLMGenera
             model=getattr(client, "model", ""),
         )
     raise LLMError("LLM provider returned an unsupported result")
+
+
+async def _generate_answer(
+    client: LLMClient,
+    prompt: TutorPrompt,
+    *,
+    invalid_response_reply: str,
+    expects_proactive_feedback: bool,
+) -> TutorAnswer:
+    """한 provider의 응답을 API가 반환할 Tutor 답변으로 정규화한다."""
+
+    generation = _coerce_generation(await client.generate(prompt), client)
+    parsed = _parse_model_response(
+        generation.text,
+        TutorAnswer(
+            reply=invalid_response_reply,
+            suggested_questions=(),
+            provider=generation.provider,
+            model=generation.model,
+            usage=generation.usage,
+        ),
+        expects_proactive_feedback=expects_proactive_feedback,
+    )
+    return TutorAnswer(
+        reply=parsed.reply,
+        suggested_questions=parsed.suggested_questions,
+        provider=generation.provider,
+        model=generation.model,
+        usage=generation.usage,
+        proactive_feedback=parsed.proactive_feedback,
+    )
 
 
 class TutorService:
@@ -160,56 +223,27 @@ class TutorService:
             saved_words=command.learner_signals.saved_words,
             conversation_history=command.conversation_history,
             focus_word=command.focus_word,
+            is_proactive_answer=command.is_proactive_answer,
         )
         prompt = build_tutor_prompt(context, profile)
 
         try:
-            # provider별 원문 응답을 공통 generation으로 바꾼 뒤 JSON을 정규화한다.
-            raw = await self.llm_client.generate(prompt)
-            generation = _coerce_generation(raw, self.llm_client)
-            parsed = _parse_model_response(
-                generation.text,
-                TutorAnswer(
-                    reply="모델 응답을 해석하지 못했습니다.",
-                    suggested_questions=(),
-                    provider=generation.provider,
-                    model=generation.model,
-                    usage=generation.usage,
-                ),
-            )
-            answer = TutorAnswer(
-                reply=parsed.reply,
-                suggested_questions=parsed.suggested_questions,
-                provider=generation.provider,
-                model=generation.model,
-                usage=generation.usage,
+            answer = await _generate_answer(
+                self.llm_client,
+                prompt,
+                invalid_response_reply="모델 응답을 해석하지 못했습니다.",
+                expects_proactive_feedback=command.is_proactive_answer,
             )
         except LLMError:
             # 외부 모델 오류를 사용자에게 노출하지 않고, 현재 자막을 포함한
             # 네트워크 없는 안내 답변을 제공한다.
             fallback_provider = getattr(self.fallback_client, "name", "fallback")
             try:
-                fallback_raw = await self.fallback_client.generate(prompt)
-                fallback_generation = _coerce_generation(
-                    fallback_raw,
+                answer = await _generate_answer(
                     self.fallback_client,
-                )
-                fallback_answer = _parse_model_response(
-                    fallback_generation.text,
-                    TutorAnswer(
-                        reply="문맥을 불러오지 못했습니다.",
-                        suggested_questions=(),
-                        provider=fallback_generation.provider,
-                        model=fallback_generation.model,
-                        usage=fallback_generation.usage,
-                    ),
-                )
-                answer = TutorAnswer(
-                    reply=fallback_answer.reply,
-                    suggested_questions=fallback_answer.suggested_questions,
-                    provider=fallback_generation.provider,
-                    model=fallback_generation.model,
-                    usage=fallback_generation.usage,
+                    prompt,
+                    invalid_response_reply="문맥을 불러오지 못했습니다.",
+                    expects_proactive_feedback=command.is_proactive_answer,
                 )
             except LLMError:
                 answer = TutorAnswer(
@@ -234,6 +268,7 @@ __all__ = [
     "TutorAskCommand",
     "TutorAnswer",
     "TutorResult",
+    "ProactiveAnswerFeedback",
     "TutorService",
     "_parse_model_response",
 ]

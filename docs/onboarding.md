@@ -53,10 +53,6 @@ Postman에서 두 JSON을 Import하고 `SubSync Local` 환경을 선택한다. �
 토큰 없이 확인한다. Supabase Auth를 연결해 보호 API를 추가할 때는 이 안내와 Postman
 Collection에 Bearer Token 설정을 함께 추가한다.
 
-Postman의 폴더형 YAML 파일은 현재 JSON Collection에서 파생된 작업 공간 자료다. API
-요청을 추가할 때는 JSON 기준 파일을 먼저 갱신하고, YAML 자료를 계속 사용한다면
-내보내기 결과가 일치하는지 확인한다.
-
 ## 4. 작업 시작 방법
 
 1. `AGENTS.md`와 수정 분야의 `docs/` 문서를 읽는다.

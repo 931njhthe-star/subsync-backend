@@ -15,7 +15,6 @@ from app.ai.context_builder import ConversationTurn, SubtitleLine
 from app.ai.learner_profile import LearnerSignals
 from app.ai.llm_client import GeminiClient, GroqClient, RuleBasedTutorClient
 from app.ai.provider_router import ProviderQuota, ProviderRouter
-from app.ai.reply_tokenizer import extract_reply_tokens
 from app.ai.tutor_state import InMemoryTutorState
 from app.ai.tutor_service import TutorAskCommand, TutorService
 from app.ai.usage_tracker import InMemoryUsageTracker
@@ -23,7 +22,6 @@ from app.core.config import settings
 from app.schemas.tutor import (
     ProactiveTutorRequest,
     ProactiveTutorResponse,
-    ReplyTokenResponse,
     TutorAskRequest,
     TutorAskResponse,
     TutorFeedbackRequest,
@@ -62,6 +60,9 @@ def get_tutor_state() -> InMemoryTutorState:
 
     return InMemoryTutorState(
         proactive_cooldown_seconds=settings.tutor_proactive_cooldown_seconds,
+        proactive_max_questions_per_video=(
+            settings.tutor_proactive_max_questions_per_video
+        ),
         requests_per_minute=settings.tutor_requests_per_minute,
     )
 
@@ -85,11 +86,13 @@ def get_tutor_service() -> TutorService:
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,
         timeout_seconds=settings.gemini_timeout_seconds,
+        max_output_tokens=settings.tutor_max_output_tokens,
     )
     groq_client = GroqClient(
         api_key=settings.groq_api_key,
         model=settings.groq_model,
         timeout_seconds=settings.groq_timeout_seconds,
+        max_output_tokens=settings.tutor_max_output_tokens,
     )
 
     if settings.llm_provider == "groq":
@@ -111,6 +114,7 @@ def get_tutor_service() -> TutorService:
                 minute_token_limit=settings.groq_minute_token_limit,
             ),
         },
+        reserve_output_tokens=settings.tutor_max_output_tokens,
     )
     return TutorService(router, fallback_client=stub_client)
 
@@ -143,21 +147,33 @@ async def ask_tutor(
         )
 
     signals = request.learner_signals
+    focus_word = request.focus_word
+    is_proactive_answer = False
+    if request.proactive_question_id:
+        focus_word = state.get_proactive_focus_word(
+            _DEVELOPMENT_ACTOR_ID,
+            request.video_id,
+            request.proactive_question_id,
+        )
+        if focus_word is None:
+            raise HTTPException(
+                status_code=404,
+                detail="답변할 Tutor 선제 질문을 찾을 수 없습니다.",
+            )
+        is_proactive_answer = True
+
     stored_history = None
     if request.conversation_id:
-        stored_history = state.get_conversation_history(
+        conversation = state.get_conversation(
             _DEVELOPMENT_ACTOR_ID,
             request.conversation_id,
         )
-        stored_video_id = state.get_conversation_video_id(
-            _DEVELOPMENT_ACTOR_ID,
-            request.conversation_id,
-        )
-        if stored_video_id is None:
+        if conversation is None:
             raise HTTPException(
                 status_code=404,
                 detail="이어갈 Tutor 대화를 찾을 수 없습니다.",
             )
+        stored_video_id, stored_history = conversation
         if stored_video_id != request.video_id:
             raise HTTPException(
                 status_code=409,
@@ -198,7 +214,8 @@ async def ask_tutor(
                 saved_words=saved_words,
             ),
             conversation_history=conversation_history,
-            focus_word=request.focus_word,
+            focus_word=focus_word,
+            is_proactive_answer=is_proactive_answer,
             conversation_id=request.conversation_id,
         )
     )
@@ -229,16 +246,14 @@ async def ask_tutor(
         tutor_difficulty=result.profile.tutor_difficulty.value,
         profile_confidence=result.profile.confidence,
         context_subtitle_count=len(result.context.nearby_subtitles),
-        reply_tokens=[
-            ReplyTokenResponse(
-                surface=token.surface,
-                normalized=token.normalized,
-                start=token.start,
-                end=token.end,
-                interactive=token.interactive,
-            )
-            for token in extract_reply_tokens(result.answer.reply)
-        ],
+        proactive_feedback=(
+            {
+                "result": result.answer.proactive_feedback.result,
+                "criteria": result.answer.proactive_feedback.criteria,
+            }
+            if result.answer.proactive_feedback
+            else None
+        ),
     )
 
 
@@ -266,7 +281,6 @@ def proactive_tutor_question(
             for line in request.recent_subtitles
         ),
         playback_state=request.playback_state,
-        last_question_id=request.last_question_id,
         last_question_at=request.last_question_at,
     )
     return ProactiveTutorResponse(

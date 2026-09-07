@@ -39,6 +39,7 @@ class TutorContext:
     saved_words: tuple[str, ...]
     conversation_history: tuple[ConversationTurn, ...]
     focus_word: str | None = None
+    is_proactive_answer: bool = False
 
 
 def normalize_caption_text(value: str | None, max_chars: int = 500) -> str:
@@ -78,6 +79,7 @@ def build_tutor_context(
     saved_words: Sequence[str] = (),
     conversation_history: Sequence[ConversationTurn] = (),
     focus_word: str | None = None,
+    is_proactive_answer: bool = False,
     max_context_lines: int = 7,
     max_input_lines: int = 100,
     history_limit: int = 6,
@@ -92,6 +94,7 @@ def build_tutor_context(
         saved_words: 프롬프트에 참고로 넣을 저장 단어 목록.
         conversation_history: 최근 대화 목록. 마지막 ``history_limit``개만 사용한다.
         focus_word: 사용자가 지정한 집중 표현.
+        is_proactive_answer: Tutor가 먼저 낸 표현 퀴즈에 대한 답인지 여부.
         max_context_lines: 프롬프트에 넣을 최대 자막 줄 수.
         max_input_lines: 정제 전에 받을 최대 자막 줄 수.
         history_limit: 프롬프트에 넣을 최대 대화 턴 수.
@@ -165,6 +168,7 @@ def build_tutor_context(
         saved_words=tuple(words),
         conversation_history=tuple(history),
         focus_word=normalize_caption_text(focus_word, max_chars=100) or None,
+        is_proactive_answer=is_proactive_answer,
     )
 
 

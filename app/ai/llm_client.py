@@ -107,28 +107,31 @@ class RuleBasedTutorClient:
         """네트워크 없이 문맥을 포함한 JSON 형식의 개발용 답변을 반환한다."""
 
         current = prompt.context.current_subtitle
+        focus_word = prompt.context.focus_word
         if current:
-            reference = f'현재 자막 "{current.english}"'
+            expression = focus_word or "이 표현"
             reply = (
-                f"{reference}을 기준으로 설명할게요. 질문하신 표현의 정확한 뜻과 쓰임을 "
-                "이 문장 안에서 먼저 확인해 보세요. 실제 모델을 연결하면 수준에 맞춘 "
-                "예문과 연습 문제까지 이어서 제공할 수 있습니다."
+                f"{expression}: 현재 자막 \"{current.english}\"에서 확인해 보세요.\n"
+                "정확한 뜻과 쓰임은 이 문장 문맥 안에서 이해하는 것이 가장 좋습니다."
             )
         else:
             reply = (
                 "현재 시점에 연결된 자막이 없습니다. 영상의 자막 문장과 함께 질문해 "
                 "주시면 그 문맥에 맞춰 설명할게요."
             )
-        return json.dumps(
-            {
-                "reply": reply,
-                "suggested_questions": [
-                    "이 표현을 사용한 다른 예문을 보여줘",
-                    "비슷한 표현과 차이를 알려줘",
-                ],
-            },
-            ensure_ascii=False,
-        )
+        response: dict[str, object] = {
+            "reply": reply,
+            "suggested_questions": [],
+        }
+        if prompt.context.is_proactive_answer:
+            response["proactive_feedback"] = {
+                "result": "unavailable",
+                "criteria": (
+                    "stub provider는 의미를 정확히 판정할 수 없습니다. "
+                    "Gemini 또는 Groq provider를 연결하면 자막 문맥으로 정답을 판정합니다."
+                ),
+            }
+        return json.dumps(response, ensure_ascii=False)
 
 
 @dataclass
@@ -138,6 +141,7 @@ class GeminiClient:
     api_key: str
     model: str = "gemini-3.6-flash"
     timeout_seconds: float = 20.0
+    max_output_tokens: int = 300
     name: str = "gemini"
 
     @property
@@ -175,7 +179,7 @@ class GeminiClient:
         )
         generation_config = {
             "temperature": 0.35,
-            "maxOutputTokens": 800,
+            "maxOutputTokens": max(self.max_output_tokens, 1),
             # Gemini 3는 기본 thinking 수준이 높아 긴 Tutor 문맥에서 답변 JSON의
             # 출력 공간을 잠식할 수 있다. 간단한 학습 대화는 low로 제한해 지연과
             # 잘린 JSON 응답을 줄인다. Gemini 2.x에는 이 필드를 보내지 않는다.
@@ -255,6 +259,7 @@ class GroqClient:
     api_key: str
     model: str = "openai/gpt-oss-20b"
     timeout_seconds: float = 20.0
+    max_output_tokens: int = 300
     base_url: str = "https://api.groq.com/openai/v1"
     name: str = "groq"
 
@@ -293,7 +298,7 @@ class GroqClient:
                 {"role": "user", "content": prompt.user_prompt},
             ],
             "temperature": 0.35,
-            "max_tokens": 800,
+            "max_tokens": max(self.max_output_tokens, 1),
         }
 
         try:

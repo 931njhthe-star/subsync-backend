@@ -105,23 +105,15 @@ class TutorAskRequest(BaseModel):
         max_length=100,
         description="사용자가 집중해서 보고 싶은 표현",
     )
+    proactive_question_id: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Tutor 선제 질문에 답할 때 전달하는 question_id",
+    )
     conversation_id: str | None = Field(
         default=None,
         max_length=100,
         description="이어갈 Tutor 대화 식별자",
-    )
-
-
-class ReplyTokenResponse(BaseModel):
-    """Tutor 답변에서 Hover/Click 대상으로 표시할 영어 표현 하나."""
-
-    surface: str = Field(description="답변에 실제 표시된 표현")
-    normalized: str = Field(description="사전 검색에 사용할 정규화 표현")
-    start: int = Field(ge=0, description="reply 내 UTF-16 시작 offset")
-    end: int = Field(ge=0, description="reply 내 UTF-16 끝 offset(미포함)")
-    interactive: bool = Field(
-        default=True,
-        description="Hover/Click 인터랙션 대상 여부",
     )
 
 
@@ -131,6 +123,15 @@ class TutorUsageResponse(BaseModel):
     input_tokens: int = Field(ge=0, description="입력 토큰 수")
     output_tokens: int = Field(ge=0, description="출력 토큰 수")
     total_tokens: int = Field(ge=0, description="총 토큰 수")
+
+
+class ProactiveAnswerFeedbackResponse(BaseModel):
+    """선제 질문 답에 대한 Tutor 판정과 사용자가 확인할 기준."""
+
+    result: Literal["correct", "partial", "incorrect", "unavailable"] = Field(
+        description="정답, 부분 정답, 오답 또는 stub provider의 판정 불가",
+    )
+    criteria: str = Field(description="판정 이유와 정답으로 인정되는 기준")
 
 
 class TutorAskResponse(BaseModel):
@@ -164,9 +165,9 @@ class TutorAskResponse(BaseModel):
         ge=0,
         description="답변에 사용된 주변 자막 줄 수",
     )
-    reply_tokens: list[ReplyTokenResponse] = Field(
-        default_factory=list,
-        description="답변에서 Hover/Click 가능한 영어 표현 목록",
+    proactive_feedback: ProactiveAnswerFeedbackResponse | None = Field(
+        default=None,
+        description="선제 질문에 답한 경우에만 제공하는 판정 결과",
     )
 
 
@@ -182,11 +183,6 @@ class ProactiveTutorRequest(BaseModel):
     playback_state: Literal["playing", "paused", "seeking"] = Field(
         default="playing",
         description="현재 영상 재생 상태",
-    )
-    last_question_id: str | None = Field(
-        default=None,
-        max_length=100,
-        description="마지막으로 표시한 선제 질문 ID",
     )
     last_question_at: float | None = Field(
         default=None,
@@ -205,6 +201,7 @@ class ProactiveTutorResponse(BaseModel):
         "insufficient_context",
         "already_seen",
         "paused",
+        "max_questions_reached",
     ] = Field(description="선제 질문 판단 사유")
     question_id: str | None = Field(
         default=None,
