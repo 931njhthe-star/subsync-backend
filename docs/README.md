@@ -1,45 +1,33 @@
 # SubSync 문서 인덱스
 
-`docs/`는 문서의 목적과 변경 주체가 섞이지 않도록 분야별 폴더로 관리한다. 새 문서는
-가장 가까운 분야 폴더에 넣고, 여러 분야에 걸치면 이 인덱스와 관련 문서에서 링크한다.
+`docs/`는 현재 구현, API 계약, DB 기준을 분리해 관리한다. 구현 상태는 문서가 아니라
+FastAPI 라우터와 테스트가 최종 기준이며, DB의 실제 생성 기준은
+[database/README.md](database/README.md)에 명시한다.
 
 ## 문서 구조
 
 ```text
 docs/
-├── onboarding.md                         # 처음 참여하는 팀원의 실행·작업 안내
-├── prompts/
-│   └── feature-task.md                   # AI 기능 작업 요청 템플릿
-├── architecture/
-│   ├── architecture.md                 # 시스템 구성과 데이터 흐름
-│   └── subsync-architecture-guide.md   # 레포지토리·폴더·역할·협업 설계
-├── api/
-│   ├── api_spec.md                     # API 공통 규칙·인증·오류
-│   └── tutor_api_spec.md               # Video Tutor API 계약
-├── ai/
-│   ├── ai_tutor_requirements.md        # AI Tutor 요구사항 정리
-│   └── ai-tutor.md                     # AI Tutor 구현 설계
-├── database/
-│   └── db_schema.sql                   # 현재 전체 Supabase 스키마
-└── migrations/                         # DB 변경 이력 (변경 발생 시 생성)
+├── onboarding.md                         # 로컬 실행과 작업 시작 방법
+└── database/
+    ├── README.md                         # SQL 정본, 실행 순서, 정합성 점검 결과
+    ├── 1. users.sql ... 6. api_logs.sql
+    └── db_schema.sql                     # 1~8번 SQL을 합친 참조용 스키마
 ```
 
 ## 권장 읽는 순서
 
-1. [시스템 아키텍처](architecture/architecture.md)로 전체 흐름을 파악한다.
-2. [레포지토리·역할 설계](architecture/subsync-architecture-guide.md)로 담당 범위를 확인한다.
-3. 처음 참여한 팀원은 [온보딩 안내](onboarding.md)와 [AI 작업 프롬프트](prompts/feature-task.md)를
-   먼저 확인한다.
-4. 작업 분야에 따라 [API 공통 규칙](api/api_spec.md), [DB 스키마](database/db_schema.sql),
-   [AI Tutor 요구사항](ai/ai_tutor_requirements.md)을 읽는다.
-5. 구현할 API는 [Tutor API 계약](api/tutor_api_spec.md) 등 도메인 명세를 기준으로 한다.
+1. [온보딩 안내](onboarding.md)와 저장소 루트의 `AGENTS.md`를 읽는다.
+2. API 계약은 로컬 서버의 `/docs`, Postman Collection, `tests/`를 기준으로 확인하고,
+   AI·DB 작업은 해당 문서를 읽는다.
+3. DB 변경 전에는 반드시 [DB 기준과 점검 결과](database/README.md)를 확인한다.
 
-## 분야별 변경 규칙
+## 변경 규칙
 
-- **Architecture**: 시스템 구성, 폴더 책임, 팀 역할이 바뀔 때 갱신한다.
-- **API**: 경로·요청·응답·인증·상태 코드가 바뀔 때 `api/` 명세와 Postman, 테스트를 함께 갱신한다.
-- **AI**: 프롬프트, 문맥, 모델, fallback, 토큰 한도가 바뀔 때 `ai/` 문서와 테스트를 함께 갱신한다.
-- **Database**: 테이블·컬럼·인덱스·RLS가 바뀔 때 `migrations/`에 SQL을 추가하고
-  `database/db_schema.sql`을 최신 상태로 갱신한다.
-
-문서의 구현 상태는 실제 코드와 일치해야 한다. 문서 간 링크가 깨지지 않는지도 변경 후 확인한다.
+- API 계약이 바뀌면 Pydantic DTO, Postman Collection, 테스트를 함께 갱신하고
+  `/openapi.json`에 의도한 경로·스키마가 노출되는지 확인한다.
+- Tutor 동작·provider·사용량 제한이 바뀌면 코드 docstring, `.env.example`, 테스트를 함께 갱신한다.
+- 이미 실행한 DB 기준 SQL은 수정하지 않는다. 변경은 새 migration으로 추가하고,
+  적용 후 `db_schema.sql`과 `database/README.md`를 갱신한다.
+- 계획 문서에는 현재 구현 여부를 명확히 표시하고, 존재하지 않는 파일이나 API를
+  현재 동작처럼 기술하지 않는다.

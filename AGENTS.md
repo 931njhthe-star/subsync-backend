@@ -24,11 +24,10 @@
 
 | 변경 영역 | 반드시 먼저 확인할 문서 |
 | --- | --- |
-| 모든 API 공통 규칙·인증·오류 | `docs/api/api_spec.md` |
-| Video Tutor API | `docs/api/tutor_api_spec.md`, `docs/ai/ai-tutor.md` |
-| DB 테이블·인덱스 | `docs/database/db_schema.sql` |
-| 시스템/폴더 구조 | `docs/architecture/architecture.md`, `docs/architecture/subsync-architecture-guide.md` |
-| 초보자 온보딩·AI 작업 요청 | `docs/onboarding.md`, `docs/prompts/feature-task.md` |
+| API 계약·Video Tutor | `app/schemas/`, `app/api/v1/`, `/docs`, Postman Collection, `tests/` |
+| DB 테이블·인덱스 | `docs/database/README.md`, `docs/database/db_schema.sql` |
+| 시스템/폴더 구조 | `app/`, `tests/`, `README.md` |
+| 초보자 온보딩 | `docs/onboarding.md` |
 | Postman 사용 방법 | `postman/README.md` |
 
 문서의 `IMPLEMENTED`, `PROPOSED`, `DEPENDENCY` 상태 표기를 실제 라우터 및 테스트와
@@ -49,13 +48,10 @@ app/
 
 tests/            pytest 단위·API 통합 테스트
 docs/             팀이 합의한 계약 및 설계 문서
-├── architecture/ 시스템 구조·레포지토리 설계
-├── api/          공통 API·도메인 API 계약
-├── ai/           AI Tutor 요구사항·설계
 ├── database/     Supabase 스키마·DB 문서
-└── migrations/  적용 순서가 보존되는 DB 변경 SQL (DB 변경 시 생성)
-docs/onboarding.md 온보딩 및 로컬 실행 절차
-docs/prompts/     AI 코딩 작업 프롬프트 템플릿
+├── onboarding.md 온보딩 및 로컬 실행 절차
+└── README.md     문서 인덱스
+docs/migrations/  DB 변경 시 적용 순서를 보존하는 SQL을 생성
 postman/          공유 가능한 Collection·Environment JSON
 dashboard/        Streamlit 운영·분석 화면
 ```
@@ -91,8 +87,8 @@ dashboard/        Streamlit 운영·분석 화면
 
 ### 세 담당자 사이의 공통 데이터 계약
 
-다음 값의 이름과 의미를 임의로 바꾸지 않는다. 변경이 필요하면 API 명세와 관련
-테스트를 먼저 갱신하고 세 담당자에게 알린다.
+다음 값의 이름과 의미를 임의로 바꾸지 않는다. 변경이 필요하면 DTO, Postman Collection,
+관련 테스트를 먼저 갱신하고 세 담당자에게 알린다.
 
 ```text
 인증 → 모든 보호 API: Authorization: Bearer <Supabase access token>
@@ -128,8 +124,8 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
   - 기능을 수정할 때 기존 주석·docstring이 실제 동작과 다르면 반드시 함께 고친다.
 - 비동기 외부 I/O에는 `async` API를 사용한다. 동기식·오래 걸리는 작업을 async
   라우터에서 직접 실행하지 않는다.
-- 오류를 숨기거나 임의의 성공 응답으로 바꾸지 않는다. `HTTPException`과 API 명세의
-  상태 코드/오류 형식을 따른다.
+- 오류를 숨기거나 임의의 성공 응답으로 바꾸지 않는다. `HTTPException`과 FastAPI가
+  `/openapi.json`에 노출하는 상태 코드/오류 형식을 따른다.
 - 설정값과 비밀값은 `app/core/config.py` 및 환경변수에서만 읽는다. API 키, 토큰,
   서비스 키를 코드·테스트 fixture·문서 예시에 넣지 않는다.
 - `main.py` 변경 시 새 라우터 등록, CORS, middleware 영향과 `/docs` OpenAPI 노출을
@@ -151,18 +147,18 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
 - 최소 기록 항목: 요청 경로, 메서드, 상태 코드, 처리 시간(ms), `request_id`,
   (인증된 요청이면) `sub` 앞부분만 마스킹한 사용자 식별자. 자막 원문, 사용자
   메시지 전체, provider 응답 원문, 토큰류는 로그에 남기지 않는다.
-- 예외는 스택 트레이스를 서버 로그에는 남기되, 클라이언트 응답에는 API 명세가
-  정의한 오류 형식만 노출한다.
+- 예외는 스택 트레이스를 서버 로그에는 남기되, 클라이언트 응답에는 FastAPI의
+  `detail` 오류 형식만 노출한다.
 - 로그 레벨 기준: 정상 요청은 INFO, 재시도된 provider 실패나 캐시 miss처럼 예상된
   이상 상황은 WARNING, 처리 불가능한 예외는 ERROR로 구분한다.
-- 새 로그 필드를 추가하거나 형식을 바꾸면 관련 문서(`docs/architecture/architecture.md` 등)에
-  반영해 다른 담당자가 같은 방식으로 파싱할 수 있게 한다.
+- 새 로그 필드를 추가하거나 형식을 바꾸면 코드 docstring과 테스트 fixture에 반영해
+  다른 담당자가 같은 방식으로 파싱할 수 있게 한다.
 
 ### AI·외부 서비스
 
 - 자막, 사용자 질문, 외부 API 응답은 신뢰할 수 없는 입력으로 취급한다.
-- provider/model, timeout, quota, fallback 동작을 바꾸면 관련 환경변수와
-  `docs/ai/ai-tutor.md`를 갱신한다.
+- provider/model, timeout, quota, fallback 동작을 바꾸면 관련 환경변수, 코드 docstring,
+  `.env.example`, 테스트를 갱신한다.
 - 실 API를 기본 테스트에 의존시키지 않는다. 기본 테스트는 stub/fake client로
   재현 가능해야 한다.
 - provider 응답 원문, Access Token, 개인 식별 가능 정보는 로그에 남기지 않는다.
@@ -173,9 +169,9 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
   provider 호출 구조와 프롬프트 템플릿에서 강제한다.
 - **대화 이력 관리**: `conversation_history`는 provider별 컨텍스트 한도를 넘지
   않도록 최근 N턴 또는 토큰 예산 기준으로 자르는 규칙을 두고, 자르는 기준(턴 수 또는
-  토큰 수)을 `docs/ai/ai-tutor.md`에 명시한다.
+  토큰 수)을 코드 docstring과 경계값 테스트에 명시한다.
 - **사용량·비용 제어**: 사용자당/세션당 Tutor 호출 빈도 제한(rate limit)과 요청당
-  최대 토큰 한도를 두고, 초과 시 반환할 오류 형식을 API 명세에 정의한다. `usage`
+  최대 토큰 한도를 두고, 초과 시 반환할 오류 형식을 DTO·테스트에 정의한다. `usage`
   필드는 기록용이며 제한 로직을 대체하지 않는다.
 
 ## 5. API 변경 규칙
@@ -186,8 +182,8 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
 1. `app/schemas/`에 요청·응답 DTO와 검증 규칙을 작성한다.
 2. `app/api/v1/`에 라우터를 구현하고 `app/main.py`에 등록한다.
 3. 도메인 로직은 `services/` 또는 `ai/`로 분리한다.
-4. `docs/api/api_spec.md`와 해당 도메인 명세(예: `docs/api/tutor_api_spec.md`)에 경로, 인증,
-   요청, 성공/실패 응답 예시, 구현 상태를 갱신한다.
+4. 서버를 실행해 `/openapi.json`에 경로, 인증, 요청·응답 스키마가 의도대로 노출되는지
+   확인한다. 라우터 docstring은 동작과 중요한 부작용을 설명한다.
 5. `postman/SubSync-API.postman_collection.json`에 요청을 추가하거나 수정한다.
    - `{{base_url}}`, `{{access_token}}` 등 환경 변수를 사용한다.
    - 정상 응답과 대표적인 실패 응답(최소 401/403/404/422 중 해당 항목)을 검증하는
@@ -198,7 +194,7 @@ Tutor 피드백 → 경락이 반환한 message_id를 기준으로 소예가 저
 7. 하위 호환이 깨지는 변경(필드 삭제·이름/타입 변경·요청 구조 변경)은 `/api/v2`로
    분리한다. 선택 필드 추가는 v1에서 가능하다.
 
-API만 추가하고 명세, Postman Collection, 테스트 중 하나를 생략한 변경은 완료가 아니다.
+API만 추가하고 OpenAPI 확인, Postman Collection, 테스트 중 하나를 생략한 변경은 완료가 아니다.
 
 ## 6. DB 변경 규칙
 
@@ -217,7 +213,7 @@ API만 추가하고 명세, Postman Collection, 테스트 중 하나를 생략�
 4. 현재 전체 스키마의 기준 문서인 `docs/database/db_schema.sql`도 최종 상태로 갱신한다.
 5. 데이터 이동·backfill·되돌리기 어려운 변경은 migration 상단 주석에 영향과 실행
    순서를 적고, PR 설명에도 명시한다.
-6. DB 모델/repository, Pydantic 스키마, API 명세, 테스트를 함께 갱신한다.
+6. DB 모델/repository, Pydantic 스키마, Postman Collection, 테스트를 함께 갱신한다.
 
 Supabase Auth 연동 테이블은 `auth.users(id)`를 참조하고, RLS에서
 `auth.uid() = user_id` 원칙을 적용한다. 운영 데이터 삭제, 대량 갱신, `DROP`은 적용 전
@@ -267,14 +263,14 @@ uv run uvicorn app.main:app --reload --port 8000
 - 커밋 전 `git status`, `git diff`로 의도하지 않은 파일·비밀값·빌드 산출물이 없는지
   확인한다.
 - 커밋 메시지는 명령형으로 간결하게 작성한다. 예: `feat: add tutor feedback endpoint`
-- 공유 파일(`app/main.py`, `app/core/config.py`, `docs/api/api_spec.md`, `docs/database/db_schema.sql`,
+- 공유 파일(`app/main.py`, `app/core/config.py`, `docs/database/db_schema.sql`,
   `pyproject.toml`, Postman Collection)은 충돌 가능성이 높으므로 수정 범위를 작게 하고
   변경 이유를 PR에 남긴다.
 - 공유 파일을 수정하는 PR은 해당 파일의 원 담당자(또는 영향받는 담당자) 리뷰를
   받은 뒤 병합한다. 담당 영역 내부만 수정하는 PR도 병합 전 최소 1인 리뷰를
   권장한다.
-- API 계약이나 DB 구조가 바뀌면 구현 전에 팀에 공유하고, 프론트엔드가 사용할 수 있는
-  상태인지 `IMPLEMENTED` 표기로 명확히 알린다.
+- API 계약이나 DB 구조가 바뀌면 구현 전에 팀에 공유하고, 프론트엔드가 사용할 수 있도록
+  `/openapi.json`과 Postman Collection에 반영한다.
 
 ## 10. 에이전트 작업 원칙
 
@@ -309,7 +305,7 @@ uv run uvicorn app.main:app --reload --port 8000
   처리했다.
 - [ ] 공개 함수·클래스·라우터에 초심자도 이해할 수 있는 docstring이 있고, 복잡한
   로직에는 "왜"를 설명하는 최신 주석이 있다.
-- [ ] API 변경이면 명세, Postman Collection, 테스트가 함께 갱신되었다.
+- [ ] API 변경이면 OpenAPI 확인, Postman Collection, 테스트가 함께 갱신되었다.
 - [ ] DB 변경이면 migration SQL(가능하면 되돌리기 SQL 포함), `db_schema.sql`,
   RLS/인덱스, 관련 테스트가 갱신되었다.
 - [ ] 인증이 필요한 기능은 JWT `sub` 기반 사용자 식별과 소유권 검증을 사용한다.

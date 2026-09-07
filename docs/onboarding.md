@@ -49,9 +49,9 @@ uv run pytest
 - `postman/SubSync-Local.postman_environment.json`
 
 Postman에서 두 JSON을 Import하고 `SubSync Local` 환경을 선택한다. 서버가 실행된
-상태에서 Collection Runner를 실행한다. Google OAuth 로그인 자체는 브라우저 동의
-화면이 필요하므로 Postman에서 자동 로그인하지 않고, 로그인 후 받은 Supabase
-Access Token을 환경 변수 `access_token`에 넣어 보호 API를 확인한다.
+상태에서 Collection Runner를 실행한다. 현재 Tutor API에는 인증 dependency가 없으므로
+토큰 없이 확인한다. Supabase Auth를 연결해 보호 API를 추가할 때는 이 안내와 Postman
+Collection에 Bearer Token 설정을 함께 추가한다.
 
 Postman의 폴더형 YAML 파일은 현재 JSON Collection에서 파생된 작업 공간 자료다. API
 요청을 추가할 때는 JSON 기준 파일을 먼저 갱신하고, YAML 자료를 계속 사용한다면
@@ -61,7 +61,7 @@ Postman의 폴더형 YAML 파일은 현재 JSON Collection에서 파생된 작�
 
 1. `AGENTS.md`와 수정 분야의 `docs/` 문서를 읽는다.
 2. 작업 브랜치를 만든다.
-3. 기능 하나를 구현하면서 API 명세, Postman, 테스트 또는 migration을 함께 갱신한다.
+3. 기능 하나를 구현하면서 DTO, Postman, 테스트 또는 migration을 함께 갱신한다.
 4. 제출 전에 다음 명령을 실행한다.
 
 ```bash
@@ -78,4 +78,4 @@ git status
 
 다른 담당자의 영역과 연결이 필요하면 먼저 `AGENTS.md`의 공통 데이터 계약을
 확인하고, 구현이 끝나지 않은 영역은 fixture/mock으로 연결한다. 계약을 임의로
-바꾸지 말고 API 명세와 테스트를 함께 수정한다.
+바꾸지 말고 DTO, Postman, 테스트를 함께 수정한다.

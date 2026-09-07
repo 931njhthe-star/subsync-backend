@@ -1,99 +1,67 @@
--- ==============================================================================
--- SubSync Supabase PostgreSQL 스키마 정의서 (8개 핵심 테이블)
+-- =============================================================================
+-- SubSync Supabase PostgreSQL 현재 테이블 스키마 (6개 테이블)
 --
--- 테이블별 실행 파일은 같은 폴더의 번호가 붙은 SQL 파일이다.
--- 외래 키 의존성이 있으므로 1번부터 8번까지 순서대로 실행한다.
--- ==============================================================================
+-- 이 파일은 같은 폴더의 번호 SQL을 한 파일로 모은 참조용 스냅샷이다.
+-- 새 환경에서는 번호 SQL 또는 이 파일 중 하나만 실행한다.
+-- =============================================================================
 
--- 1. users: 사용자 계정 정보
+-- 1. users: Supabase Auth와 연결된 앱 사용자 정보
 CREATE TABLE IF NOT EXISTS public.users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    nickname VARCHAR(50),
-    level VARCHAR(20) DEFAULT 'A2',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    id UUID PRIMARY KEY REFERENCES auth.users(id),
+    google_account_id TEXT UNIQUE,
+    email TEXT,
+    created_at TIMESTAMPTZ,
+    last_login_at TIMESTAMPTZ
 );
 
--- 2. video_history: 영상 시청 이력
-CREATE TABLE IF NOT EXISTS public.video_history (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    video_id VARCHAR(50) NOT NULL,
-    video_title VARCHAR(255),
-    last_timestamp FLOAT DEFAULT 0.0,
-    watch_duration_sec INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 2. login_history: 사용자 로그인 및 접근 이력
+CREATE TABLE IF NOT EXISTS public.login_history (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id),
+    login_at TIMESTAMPTZ,
+    logout_at TIMESTAMPTZ,
+    last_access_at TIMESTAMPTZ
 );
 
--- 3. saved_words: 저장한 단어/표현
+-- 3. saved_words: 사용자가 저장한 단어
 CREATE TABLE IF NOT EXISTS public.saved_words (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    word VARCHAR(100) NOT NULL,
-    meaning TEXT NOT NULL,
-    video_id VARCHAR(50),
-    timestamp FLOAT,
-    context_sentence TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id),
+    word TEXT,
+    saved_at TIMESTAMPTZ
 );
 
--- 4. click_events: 단어 클릭 이벤트 로그 (학습 행동 분석용)
-CREATE TABLE IF NOT EXISTS public.click_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-    word VARCHAR(100) NOT NULL,
-    video_id VARCHAR(50),
-    timestamp FLOAT,
-    context_sentence TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 4. ai_conversations: 영상별 AI 질문·답변과 피드백
+CREATE TABLE IF NOT EXISTS public.ai_conversations (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id),
+    video_id TEXT,
+    question TEXT,
+    answer TEXT,
+    started_at TIMESTAMPTZ,
+    feedback JSONB
 );
 
--- 5. tutor_conversations: Video Tutor 대화 세션
-CREATE TABLE IF NOT EXISTS public.tutor_conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    video_id VARCHAR(50) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 5. llm_usage: 사용자별 LLM 사용량 기록
+CREATE TABLE IF NOT EXISTS public.llm_usage (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id),
+    provider TEXT,
+    model_name TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    total_tokens INTEGER,
+    used_at TIMESTAMPTZ
 );
 
--- 6. tutor_messages: Video Tutor 주고받은 메시지
-CREATE TABLE IF NOT EXISTS public.tutor_messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID REFERENCES public.tutor_conversations(id) ON DELETE CASCADE,
-    sender VARCHAR(20) NOT NULL, -- 'user' | 'tutor' | 'proactive'
-    message TEXT NOT NULL,
-    timestamp FLOAT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 6. api_logs: API 요청 결과와 응답 시간 기록
+CREATE TABLE IF NOT EXISTS public.api_logs (
+    id UUID PRIMARY KEY,
+    api_name TEXT,
+    user_id UUID REFERENCES public.users(id),
+    requested_at TIMESTAMPTZ,
+    response_time_ms INTEGER,
+    status_code SMALLINT,
+    success BOOLEAN,
+    error_message TEXT
 );
-
--- 7. user_feedback: AI 답변에 대한 사용자 피드백
-CREATE TABLE IF NOT EXISTS public.user_feedback (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id UUID REFERENCES public.tutor_messages(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-    rating VARCHAR(10) NOT NULL, -- 'up' | 'down'
-    reason VARCHAR(100),         -- '너무 길어요', '설명이 어려워요' 등
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 8. system_logs: API 응답시간, AI 지연시간 및 오류 로그 (대시보드 모니터링용)
-CREATE TABLE IF NOT EXISTS public.system_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_type VARCHAR(50) NOT NULL,
-    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-    video_id VARCHAR(50),
-    latency_ms INT,
-    error_message TEXT,
-    payload JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 인덱스 생성 (조회 성능 최적화)
-CREATE INDEX IF NOT EXISTS idx_saved_words_user ON public.saved_words(user_id);
-CREATE INDEX IF NOT EXISTS idx_click_events_word ON public.click_events(word);
-CREATE INDEX IF NOT EXISTS idx_tutor_messages_conv ON public.tutor_messages(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_system_logs_event ON public.system_logs(event_type, created_at);
