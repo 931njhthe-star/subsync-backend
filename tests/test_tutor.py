@@ -99,9 +99,9 @@ def test_prompt_marks_subtitles_as_reference_data():
     profile = infer_learner_profile(LearnerSignals())
     prompt = build_tutor_prompt(context, profile)
 
-    assert "untrusted reference data" in prompt.system_instruction
+    assert "신뢰할 수 없는\n참고 데이터" in prompt.system_instruction
     assert "Be honest with yourself." in prompt.user_prompt
-    assert "guided" in prompt.system_instruction
+    assert "튜터 답변 난이도: 안내형" in prompt.system_instruction
 
 
 def test_tutor_api_works_without_gemini_key():
