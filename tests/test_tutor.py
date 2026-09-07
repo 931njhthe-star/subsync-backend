@@ -153,6 +153,45 @@ def test_incomplete_model_json_recovers_the_completed_reply_and_grading():
     assert "evaluate의 뜻은" in parsed.proactive_feedback.criteria
 
 
+def test_korean_caption_match_overrides_an_incorrect_model_grade():
+    """자막 번역과 일치한 답은 모델이 오판해도 정답으로 처리한다."""
+
+    class IncorrectGrader:
+        name = "gemini"
+        model = "test-model"
+
+        async def generate(self, prompt):
+            return (
+                '{"reply":"오답입니다.","suggested_questions":[],"proactive_feedback":'
+                '{"result":"incorrect","criteria":"사용자가 예라고 답했습니다."}}'
+            )
+
+    import asyncio
+
+    result = asyncio.run(
+        TutorService(IncorrectGrader()).ask(
+            TutorAskCommand(
+                video_id="video-1",
+                timestamp=1,
+                user_message="평가하다",
+                subtitles=(
+                    SubtitleLine(
+                        1,
+                        "How did you evaluate Astra?",
+                        "Astra를 어떻게 평가할지 생각했나요?",
+                    ),
+                ),
+                focus_word="evaluate",
+                is_proactive_answer=True,
+            )
+        )
+    )
+
+    assert result.answer.proactive_feedback is not None
+    assert result.answer.proactive_feedback.result == "correct"
+    assert "평가" in result.answer.proactive_feedback.criteria
+
+
 def test_tutor_api_works_without_gemini_key():
     response = client.post(
         "/api/v1/tutor/ask",

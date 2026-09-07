@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 from app.ai.context_builder import (
@@ -74,6 +74,10 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 _PARTIAL_JSON_FIELD_RE = re.compile(
     r'"(?P<field>reply|result|criteria)"\s*:\s*"(?P<value>(?:\\.|[^"\\])*)(?:"|$)'
 )
+_KOREAN_WORD_RE = re.compile(r"[가-힣]{2,}")
+_KOREAN_ENDING_RE = re.compile(
+    r"(?:하다|하는|했다|할지|할|한다|이다|이에요|입니다|을|를|은|는|이|가|의|에|로|와|과)$"
+)
 
 
 def _partial_json_field(raw: str, field: str) -> str | None:
@@ -119,6 +123,54 @@ def _recover_truncated_json(
         suggested_questions=(),
         provider=fallback.provider,
         proactive_feedback=feedback,
+    )
+
+
+def _korean_roots(value: str) -> set[str]:
+    """한국어 번역과 짧은 답을 비교할 수 있도록 기본 어간 후보를 만든다."""
+
+    roots = set()
+    for word in _KOREAN_WORD_RE.findall(value):
+        root = _KOREAN_ENDING_RE.sub("", word)
+        if len(root) >= 2:
+            roots.add(root)
+    return roots
+
+
+def _caption_confirms_answer(context: TutorContext) -> str | None:
+    """사용자 답이 자막의 한국어 번역과 명백히 일치하면 그 핵심어를 반환한다."""
+
+    answer_roots = _korean_roots(context.user_message)
+    if not answer_roots:
+        return None
+
+    subtitle_roots = {
+        root
+        for subtitle in context.nearby_subtitles
+        for root in _korean_roots(subtitle.korean or "")
+    }
+    matches = answer_roots & subtitle_roots
+    return max(matches, key=len) if matches else None
+
+
+def _apply_caption_answer_check(
+    answer: TutorAnswer,
+    context: TutorContext,
+) -> TutorAnswer:
+    """자막 번역에 명시된 정답은 모델의 오판보다 우선한다."""
+
+    matched_word = _caption_confirms_answer(context)
+    if not matched_word:
+        return answer
+
+    return replace(
+        answer,
+        proactive_feedback=ProactiveAnswerFeedback(
+            result="correct",
+            criteria=(
+                f"자막의 한국어 번역에 '{matched_word}'가 포함되어 답변의 핵심 의미와 일치합니다."
+            ),
+        ),
     )
 
 
@@ -311,6 +363,11 @@ class TutorService:
                     provider=fallback_provider,
                     model=getattr(self.fallback_client, "model", ""),
                 )
+
+        if command.is_proactive_answer:
+            # 모델이 이전 대화의 짧은 "예" 등을 현재 답으로 잘못 읽어도, 현재
+            # 자막 번역에 명시된 답은 안정적으로 정답 처리한다.
+            answer = _apply_caption_answer_check(answer, context)
 
         return TutorResult(
             # 클라이언트가 기존 대화를 전달하면 같은 ID를 유지하고, 첫 질문이면

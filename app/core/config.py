@@ -15,6 +15,13 @@ class Settings:
     """
 
     ENV: str = os.getenv("ENV", "development")
+    # API 로그는 서버 전용 키로만 기록한다. 로그인 전에는 user_id를 비워 익명
+    # 운영 지표만 남긴다.
+    supabase_url: str = os.getenv("SUPABASE_URL", "").rstrip("/")
+    supabase_secret_key: str = os.getenv("SUPABASE_SECRET_KEY", "")
+    api_log_timeout_seconds: float = float(
+        os.getenv("API_LOG_TIMEOUT_SECONDS", "2")
+    )
     # 현재 구현에서는 아래 설정 중 Video Tutor 관련 값만 사용한다.
     # 외부 provider는 명시적으로 켠 경우에만 사용한다. 기본값은 로컬 fallback이다.
     # gemini/auto: Gemini -> Groq, groq: Groq -> Gemini 순서로 시도한다.

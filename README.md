@@ -13,6 +13,10 @@ YouTube 자막 문맥을 활용하는 AI Video Tutor의 FastAPI 백엔드입니�
 Tutor 대화·피드백·사용량 제한은 현재 개발용 프로세스 메모리에 저장된다. Supabase Auth,
 영구 DB 저장, Redis 캐시는 아직 API에 연결되어 있지 않다.
 
+`SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 설정하면 API 요청의 경로, 상태 코드, 처리 시간만
+`api_logs`에 익명으로 기록한다. 요청·응답 본문과 사용자 메시지는 DB에 저장하지 않는다.
+`/api/v1/logs/event`는 현재 제공하지 않는 프론트엔드 이벤트 endpoint이므로 호출하지 않는다.
+
 ## 기준
 
 - API 계약: FastAPI `/docs`, Postman Collection, `tests/`
