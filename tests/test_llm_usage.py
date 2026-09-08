@@ -16,10 +16,14 @@ def test_usage_entry_matches_current_table_without_user_identifier():
         input_tokens=120,
         output_tokens=30,
         total_tokens=150,
+        finish_reason="stop",
+        provider_latency=247,
     ).as_row()
 
     assert "user_id" not in row
     assert row["total_tokens"] == 150
+    assert row["finish_reason"] == "stop"
+    assert row["provider_latency"] == 247
 
 
 def test_usage_repository_posts_and_summarizes_all_rows(monkeypatch):
@@ -67,13 +71,15 @@ def test_usage_repository_posts_and_summarizes_all_rows(monkeypatch):
     )
     asyncio.run(
         repository.write(
-            LLMUsageEntry("groq", "model", 120, 30, 150)
+            LLMUsageEntry("groq", "model", 120, 30, 150, "stop", 247)
         )
     )
     summary = asyncio.run(repository.summarize_all())
 
     assert captured["post"]["url"] == "https://example.supabase.co/rest/v1/llm_usage"
     assert "user_id" not in captured["post"]["json"]
+    assert captured["post"]["json"]["finish_reason"] == "stop"
+    assert captured["post"]["json"]["provider_latency"] == 247
     assert "user_id" not in captured["get"]["params"]
     assert summary.request_count == 2
     assert summary.input_tokens == 200

@@ -23,6 +23,8 @@ class LLMUsageEntry:
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    finish_reason: str | None = None
+    provider_latency: int | None = None
 
     def as_row(self) -> dict[str, object]:
         """``public.llm_usage`` INSERT에 사용할 현재 시각의 행을 반환한다."""

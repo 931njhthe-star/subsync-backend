@@ -41,13 +41,15 @@ class TutorAskCommand:
 
 @dataclass(frozen=True)
 class TutorAnswer:
-    """모델 답변과 어떤 provider가 생성했는지에 대한 메타데이터."""
+    """모델 답변과 DB 사용량 기록에 필요한 provider 메타데이터."""
 
     reply: str
     suggested_questions: tuple[str, ...]
     provider: str
     model: str = ""
     usage: TokenUsage = TokenUsage()
+    finish_reason: str | None = None
+    provider_latency: int | None = None
     proactive_feedback: ProactiveAnswerFeedback | None = None
 
 
@@ -299,6 +301,8 @@ async def _generate_answer(
         provider=generation.provider,
         model=generation.model,
         usage=generation.usage,
+        finish_reason=generation.finish_reason,
+        provider_latency=generation.provider_latency,
         proactive_feedback=parsed.proactive_feedback,
     )
 

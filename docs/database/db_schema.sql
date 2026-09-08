@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS public.llm_usage (
     input_tokens INTEGER,
     output_tokens INTEGER,
     total_tokens INTEGER,
-    used_at TIMESTAMPTZ
+    used_at TIMESTAMPTZ,
+    finish_reason TEXT,
+    provider_latency INTEGER
 );
 
 -- 6. api_logs: API 요청 결과와 응답 시간 기록
