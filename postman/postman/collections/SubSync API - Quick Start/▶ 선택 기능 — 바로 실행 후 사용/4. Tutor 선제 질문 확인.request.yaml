@@ -24,7 +24,11 @@ scripts:
     code: |-
       pm.test('선제 질문 판단 결과를 받는다', function () {
         pm.response.to.have.status(200);
-        pm.expect(pm.response.json()).to.have.property('should_show');
+        const body = pm.response.json();
+        pm.expect(body).to.have.property('should_show');
+        if (body.should_show) {
+          pm.collectionVariables.set('proactive_question_id', body.question_id);
+        }
       });
     language: text/javascript
 order: 2000

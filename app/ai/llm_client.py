@@ -110,10 +110,31 @@ class RuleBasedTutorClient:
         focus_word = prompt.context.focus_word
         if current:
             expression = focus_word or "이 표현"
-            reply = (
-                f"{expression}: 현재 자막 \"{current.english}\"에서 확인해 보세요.\n"
-                "정확한 뜻과 쓰임은 이 문장 문맥 안에서 이해하는 것이 가장 좋습니다."
-            )
+            if prompt.context.is_proactive_answer:
+                # 네트워크 없는 fallback은 사용자의 답을 억지로 정답/오답으로
+                # 단정하지 않는다. 대신 현재 자막과 번역을 다시 보여 주어 대화가
+                # 끊기지 않도록 하고, 내부 provider 상태는 사용자 문장에 노출하지 않는다.
+                if current.korean:
+                    reply = (
+                        f"답변을 이 문장과 함께 다시 확인해 볼게요. '{expression}'이 들어간 "
+                        f"자막은 \"{current.english}\"이고, 전체 뜻은 \"{current.korean}\"입니다."
+                    )
+                else:
+                    reply = (
+                        f"답변을 이 문장과 함께 다시 확인해 볼게요. '{expression}'이 들어간 "
+                        f"자막은 \"{current.english}\"입니다. 번역 자막이 있으면 더 정확하게 설명할 수 있어요."
+                    )
+            elif current.korean:
+                reply = (
+                    f"'{expression}'은 현재 자막 \"{current.english}\"에서 사용됐어요. "
+                    f"이 문장의 뜻은 \"{current.korean}\"입니다. 표현의 뉘앙스가 궁금하면 "
+                    "어느 부분이 헷갈렸는지 말해 주세요."
+                )
+            else:
+                reply = (
+                    f"'{expression}'은 현재 자막 \"{current.english}\"에서 사용됐어요. "
+                    "번역 자막과 함께 보면 문장 속 뜻과 쓰임을 더 정확하게 설명할 수 있어요."
+                )
         else:
             reply = (
                 "현재 시점에 연결된 자막이 없습니다. 영상의 자막 문장과 함께 질문해 "
@@ -123,14 +144,6 @@ class RuleBasedTutorClient:
             "reply": reply,
             "suggested_questions": [],
         }
-        if prompt.context.is_proactive_answer:
-            response["proactive_feedback"] = {
-                "result": "unavailable",
-                "criteria": (
-                    f"'{focus_word or '이 표현'}'은 stub provider가 의미를 정확히 판정할 수 없습니다. "
-                    "Gemini 또는 Groq provider를 연결하면 자막 문맥으로 정답을 판정합니다."
-                ),
-            }
         return json.dumps(response, ensure_ascii=False)
 
 
@@ -178,7 +191,6 @@ class GeminiClient:
             f"{self.model}:generateContent"
         )
         generation_config = {
-            "temperature": 0.35,
             "maxOutputTokens": max(self.max_output_tokens, 1),
             # Gemini 3는 기본 thinking 수준이 높아 긴 Tutor 문맥에서 답변 JSON의
             # 출력 공간을 잠식할 수 있다. 간단한 학습 대화는 low로 제한해 지연과
@@ -186,7 +198,11 @@ class GeminiClient:
             "responseMimeType": "application/json",
         }
         if self.model.startswith("gemini-3"):
+            # Gemini 3 계열은 temperature 같은 샘플링 파라미터를 지원하지 않으므로
+            # 함께 보내면 provider가 400을 반환하고 불필요하게 stub으로 내려갈 수 있다.
             generation_config["thinkingConfig"] = {"thinkingLevel": "low"}
+        else:
+            generation_config["temperature"] = 0.35
 
         payload = {
             "system_instruction": {

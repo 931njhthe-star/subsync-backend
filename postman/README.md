@@ -32,6 +32,10 @@ Collection을 제공한다.
 거부 예시가 있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한
 `conversation_id`와 `message_id`를 자동으로 이어서 사용한다.
 
+선제 질문 답변은 4번 요청의 `question_id`를 5번 요청의
+`proactive_question_id`로 전달해야 한다. 일반 Tutor 질문은 pending 선제 질문이
+있어도 채점 모드로 바뀌지 않으며, 선제 질문은 표시 후 30초가 지나면 만료된다.
+
 `Dashboard — 운영 지표 조회` 폴더에는 Streamlit 화면에 연결할 다음 조회 API가 있다.
 
 1. `GET /api/v1/dashboard/overview` — 두 테이블의 KPI와 최근 API 활동

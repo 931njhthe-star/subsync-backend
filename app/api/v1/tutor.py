@@ -167,7 +167,10 @@ async def ask_tutor(
     Note:
         인증/DB 계층이 아직 연결되지 않아 현재는 요청에 포함된
         ``learner_signals``를 그대로 사용한다. 운영 단계에서는 인증된 사용자 ID로
-        서버가 학습 신호를 조회해야 한다.
+        서버가 학습 신호를 조회해야 한다. 선제 질문 답변은 요청의
+        ``proactive_question_id``가 실제로 전달된 경우에만 피드백 모드로 처리하며,
+        일반 질문은 자연스러운 Tutor 대화로 유지한다. 같은 대화의 후속 요청에
+        자막이 생략되면 마지막으로 저장한 자막 문맥을 재사용한다.
     """
 
     if not state.allow_request(_DEVELOPMENT_ACTOR_ID):
@@ -180,6 +183,9 @@ async def ask_tutor(
     focus_word = request.focus_word
     is_proactive_answer = False
     proactive_question_id = request.proactive_question_id
+    # 선제 질문 ID가 명시된 요청만 퀴즈 답변으로 처리한다. pending 질문을
+    # 추측해 일반 질문까지 채점 모드로 바꾸면 사용자가 갑자기 판정 화면을
+    # 보게 되므로, 애매한 요청은 항상 일반 대화로 남긴다.
     if request.proactive_question_id:
         focus_word = state.get_proactive_focus_word(
             _DEVELOPMENT_ACTOR_ID,
@@ -192,17 +198,9 @@ async def ask_tutor(
                 detail="답변할 Tutor 선제 질문을 찾을 수 없습니다.",
             )
         is_proactive_answer = True
-    else:
-        pending_question = state.find_pending_proactive_question(
-            _DEVELOPMENT_ACTOR_ID,
-            request.video_id,
-            focus_word=focus_word,
-        )
-        if pending_question is not None:
-            proactive_question_id, focus_word = pending_question
-            is_proactive_answer = True
 
     stored_history = None
+    stored_subtitles: tuple[SubtitleLine, ...] = ()
     if request.conversation_id:
         conversation = state.get_conversation(
             _DEVELOPMENT_ACTOR_ID,
@@ -219,6 +217,13 @@ async def ask_tutor(
                 status_code=409,
                 detail="Tutor 대화와 영상 ID가 일치하지 않습니다.",
             )
+        stored_subtitles = (
+            state.get_conversation_subtitles(
+                _DEVELOPMENT_ACTOR_ID,
+                request.conversation_id,
+            )
+            or ()
+        )
     # 저장된 대화가 있으면 서버 이력을 우선한다. 아직 저장된 대화가 없는 최초
     # 요청만 클라이언트가 보낸 history를 사용해 대화를 초기화한다.
     conversation_history = (
@@ -233,6 +238,14 @@ async def ask_tutor(
     # 저장 단어 배열과 별도로 전달된 count 중 큰 값을 사용해 부분 데이터도 보정한다.
     saved_words = tuple(item.word for item in signals.saved_words)
     saved_word_count = max(signals.saved_word_count or 0, len(saved_words))
+    subtitles = tuple(
+        SubtitleLine(timestamp=line.time, english=line.en, korean=line.ko)
+        for line in request.recent_subtitles
+    )
+    if not subtitles and stored_subtitles:
+        # 같은 대화의 후속 질문이 자막을 생략해도 마지막으로 확인한 문장을
+        # 재사용한다. 새로운 자막이 오면 위의 요청 문맥이 항상 우선한다.
+        subtitles = stored_subtitles
 
     # HTTP 경계의 Pydantic DTO를 AI 계층이 사용하는 불변 도메인 객체로 변환한다.
     result = await service.ask(
@@ -240,10 +253,7 @@ async def ask_tutor(
             video_id=request.video_id,
             timestamp=request.timestamp,
             user_message=request.user_message,
-            subtitles=tuple(
-                SubtitleLine(timestamp=line.time, english=line.en, korean=line.ko)
-                for line in request.recent_subtitles
-            ),
+            subtitles=subtitles,
             learner_signals=LearnerSignals(
                 saved_word_count=saved_word_count,
                 quiz_attempts=signals.quiz_attempts,
@@ -268,6 +278,7 @@ async def ask_tutor(
         user_message=request.user_message,
         tutor_reply=result.answer.reply,
         initial_history=conversation_history if stored_history is None else (),
+        subtitles=subtitles,
     )
     if is_proactive_answer and proactive_question_id:
         state.mark_proactive_question_answered(
@@ -292,17 +303,6 @@ async def ask_tutor(
 
     proactive_feedback = result.answer.proactive_feedback
     reply = result.answer.reply
-    if proactive_feedback:
-        labels = {
-            "correct": "정답",
-            "partial": "부분 정답",
-            "incorrect": "오답",
-            "unavailable": "판정 불가",
-        }
-        reply = (
-            f"판정: {labels[proactive_feedback.result]}\n"
-            f"정답 기준: {proactive_feedback.criteria}"
-        )
 
     return TutorAskResponse(
         conversation_id=result.conversation_id,

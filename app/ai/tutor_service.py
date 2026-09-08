@@ -111,7 +111,7 @@ def _recover_truncated_json(
     if expects_proactive_feedback:
         result = _partial_json_field(raw, "result")
         criteria = _partial_json_field(raw, "criteria")
-        if result in {"correct", "partial", "incorrect", "unavailable"}:
+        if result in {"correct", "partial", "incorrect"}:
             feedback = ProactiveAnswerFeedback(
                 result=result,
                 # criteria가 잘린 경우에도 reply에는 모델이 이미 설명한 핵심이 있다.
@@ -241,7 +241,7 @@ def _parse_model_response(
             result = value.get("result")
             criteria = value.get("criteria")
             if (
-                result in {"correct", "partial", "incorrect", "unavailable"}
+                result in {"correct", "partial", "incorrect"}
                 and isinstance(criteria, str)
                 and criteria.strip()
             ):
@@ -342,7 +342,10 @@ class TutorService:
             answer = await _generate_answer(
                 self.llm_client,
                 prompt,
-                invalid_response_reply="모델 응답을 해석하지 못했습니다.",
+                invalid_response_reply=(
+                    "답변을 정리하는 중에 문제가 있었어요. 자막 속 어떤 표현이 "
+                    "궁금한지 다시 알려 주세요."
+                ),
                 expects_proactive_feedback=command.is_proactive_answer,
             )
         except LLMError:
@@ -353,12 +356,18 @@ class TutorService:
                 answer = await _generate_answer(
                     self.fallback_client,
                     prompt,
-                    invalid_response_reply="문맥을 불러오지 못했습니다.",
+                    invalid_response_reply=(
+                        "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
+                        "질문해 주세요."
+                    ),
                     expects_proactive_feedback=command.is_proactive_answer,
                 )
             except LLMError:
                 answer = TutorAnswer(
-                    reply="문맥을 불러오지 못했습니다.",
+                    reply=(
+                        "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
+                        "질문해 주세요."
+                    ),
                     suggested_questions=(),
                     provider=fallback_provider,
                     model=getattr(self.fallback_client, "model", ""),

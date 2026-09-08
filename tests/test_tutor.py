@@ -123,10 +123,11 @@ def test_proactive_answer_prompt_requests_structured_grading():
     )
     prompt = build_tutor_prompt(context, infer_learner_profile(LearnerSignals()))
 
-    assert "선제 질문 답안 판정" in prompt.system_instruction
+    assert "선제 질문 답안 피드백" in prompt.system_instruction
     assert "correct, partial, incorrect" in prompt.system_instruction
     assert '"proactive_feedback"' in prompt.system_instruction
-    assert "60자 이내" in prompt.system_instruction
+    assert "자연스러운 2~3문장 피드백" in prompt.system_instruction
+    assert "'판정'" in prompt.system_instruction
     assert "JSON 객체를 반드시 닫으세요" in prompt.system_instruction
 
 
@@ -254,6 +255,7 @@ def test_tutor_conversation_id_reuses_in_memory_history():
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["conversation_id"] == conversation_id
+    assert second.json()["context_subtitle_count"] == 1
     conversation = get_tutor_state().get_conversation("test", conversation_id)
     assert conversation is not None
     _, history = conversation
@@ -383,8 +385,8 @@ def test_proactive_question_applies_cooldown_and_seen_word_guard():
     assert third.json()["reason"] == "already_seen"
 
 
-def test_proactive_answer_returns_feedback_without_question_id():
-    """기존 Extension도 가장 최근 선제 질문 답을 자동 연결하는지 확인한다."""
+def test_explicit_proactive_question_id_returns_natural_feedback():
+    """명시적인 선제 질문 답변은 구조화된 피드백과 자연스러운 reply를 반환한다."""
 
     proactive = client.post(
         "/api/v1/tutor/proactive",
@@ -402,7 +404,8 @@ def test_proactive_answer_returns_feedback_without_question_id():
         json={
             "video_id": "answer-video",
             "timestamp": 10,
-            "user_message": "솔직하게 말한다는 뜻이에요.",
+            "proactive_question_id": question_id,
+            "user_message": "자신에게 솔직해라는 뜻이에요.",
             "recent_subtitles": [
                 {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
             ],
@@ -414,10 +417,10 @@ def test_proactive_answer_returns_feedback_without_question_id():
     assert response.status_code == 200
     feedback = response.json()["proactive_feedback"]
     assert feedback is not None
-    assert feedback["result"] == "unavailable"
-    assert "stub provider" in feedback["criteria"]
-    assert "판정: 판정 불가" in response.json()["reply"]
-    assert "정답 기준:" in response.json()["reply"]
+    assert feedback["result"] == "correct"
+    assert "판정:" not in response.json()["reply"]
+    assert "판정 불가" not in response.json()["reply"]
+    assert "정답 기준:" not in response.json()["reply"]
     assert "honest with" in response.json()["reply"]
 
     later_question = client.post(
@@ -429,6 +432,70 @@ def test_proactive_answer_returns_feedback_without_question_id():
         },
     )
     assert later_question.json()["proactive_feedback"] is None
+
+
+def test_general_question_does_not_consume_pending_proactive_question():
+    """선제 질문이 남아 있어도 일반 질문을 퀴즈 답변으로 오인하지 않는다."""
+
+    proactive = client.post(
+        "/api/v1/tutor/proactive",
+        json={
+            "video_id": "unrelated-question-video",
+            "timestamp": 10,
+            "recent_subtitles": [
+                {
+                    "time": 10,
+                    "en": "Be honest with yourself.",
+                    "ko": "너 자신에게 솔직해.",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "unrelated-question-video",
+            "timestamp": 11,
+            "user_message": "이 문장의 주어가 무엇인가요?",
+        },
+    )
+
+    assert proactive.status_code == 200
+    assert response.status_code == 200
+    assert response.json()["proactive_feedback"] is None
+    assert "판정:" not in response.json()["reply"]
+
+
+def test_proactive_question_expires_after_thirty_seconds():
+    """표시된 선제 질문은 30초가 지나면 답변 대상에서 제외한다."""
+
+    from app.ai.tutor_state import InMemoryTutorState
+
+    now = [100.0]
+    state = InMemoryTutorState(
+        proactive_cooldown_seconds=0,
+        proactive_question_ttl_seconds=30,
+        clock=lambda: now[0],
+    )
+    decision = state.decide_proactive(
+        actor_id="user-1",
+        video_id="expiry-video",
+        timestamp=10,
+        subtitles=(SubtitleLine(10, "I want to be honest with you."),),
+        playback_state="playing",
+    )
+
+    assert decision.question_id is not None
+    assert state.get_proactive_focus_word(
+        "user-1", "expiry-video", decision.question_id
+    ) == "honest with"
+    now[0] = 130.0
+    assert state.get_proactive_focus_word(
+        "user-1", "expiry-video", decision.question_id
+    ) is None
+    assert state.find_pending_proactive_question(
+        "user-1", "expiry-video", focus_word="honest with"
+    ) is None
 
 
 def test_unknown_proactive_question_is_rejected():
@@ -776,6 +843,7 @@ def test_gemini3_client_limits_thinking_level_for_tutor_json(monkeypatch):
     assert FakeAsyncClient.last_call["json"]["generationConfig"]["thinkingConfig"] == {
         "thinkingLevel": "low"
     }
+    assert "temperature" not in FakeAsyncClient.last_call["json"]["generationConfig"]
 
 
 class QuotaFailingClient:
