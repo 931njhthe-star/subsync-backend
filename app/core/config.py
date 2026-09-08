@@ -36,6 +36,14 @@ class Settings:
     dictionary_timeout_seconds: float = float(
         os.getenv("DICTIONARY_TIMEOUT_SECONDS", "8") or "8"
     )
+    # Free Dictionary API 장애 시 영어 Wiktionary REST API를 보조 provider로 사용한다.
+    dictionary_fallback_api_url: str = (
+        os.getenv(
+            "DICTIONARY_FALLBACK_API_URL",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+        ).strip()
+        or "https://en.wiktionary.org/api/rest_v1/page/definition/{word}"
+    )
     deepl_api_key: str = os.getenv("DEEPL_API_KEY", "").strip()
     deepl_api_base_url: str = (
         os.getenv("DEEPL_API_BASE_URL", "https://api-free.deepl.com").strip()

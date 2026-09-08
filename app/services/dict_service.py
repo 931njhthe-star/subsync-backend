@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import re
 from dataclasses import dataclass
@@ -102,7 +103,69 @@ def parse_free_dictionary_payload(
         "part_of_speech": part_of_speech,
         "english_definitions": english_definitions,
         "examples": examples,
+        "source": "free_dictionary",
     }
+
+
+def parse_wiktionary_payload(
+    payload: Any,
+    requested_word: str,
+) -> dict[str, Any]:
+    """Wiktionary REST 응답에서 영어 정의와 예문을 추출한다.
+
+    Wiktionary 응답은 정의 안에 HTML 링크가 포함될 수 있으므로 화면에 보여줄
+    텍스트만 남긴다. Free Dictionary와 같은 내부 자료형으로 변환하면 이후
+    DeepL 번역과 API 응답 로직을 provider별로 중복 작성하지 않아도 된다.
+    """
+
+    english_entries = payload.get("en") if isinstance(payload, dict) else None
+    if not isinstance(english_entries, list) or not english_entries:
+        raise DictionaryWordNotFound(requested_word)
+
+    part_of_speech: str | None = None
+    english_definitions: list[str] = []
+    examples: list[str] = []
+
+    for entry in english_entries:
+        if not isinstance(entry, dict):
+            continue
+        part_of_speech = part_of_speech or entry.get("partOfSpeech")
+        for definition_item in entry.get("definitions", []):
+            if not isinstance(definition_item, dict):
+                continue
+
+            definition = _clean_wiktionary_markup(
+                definition_item.get("definition")
+            )
+            if definition:
+                english_definitions.append(definition)
+
+            raw_examples = definition_item.get("examples", [])
+            if isinstance(raw_examples, list):
+                for example in raw_examples:
+                    cleaned_example = _clean_wiktionary_markup(example)
+                    if cleaned_example and cleaned_example not in examples:
+                        examples.append(cleaned_example)
+
+    if not english_definitions:
+        raise DictionaryWordNotFound(requested_word)
+
+    return {
+        "phonetic": None,
+        "part_of_speech": part_of_speech,
+        "english_definitions": english_definitions,
+        "examples": examples,
+        "source": "wiktionary",
+    }
+
+
+def _clean_wiktionary_markup(value: Any) -> str:
+    """Wiktionary 정의의 HTML 표시용 태그를 일반 텍스트로 바꾼다."""
+
+    if not isinstance(value, str):
+        return ""
+    without_tags = re.sub(r"<[^>]*>", "", value)
+    return html.unescape(without_tags).strip()
 
 
 class DictionaryService:
@@ -134,7 +197,28 @@ class DictionaryService:
         cache_hit = cached_base is not None
 
         if cached_base is None:
-            base_data = await self._load_from_free_dictionary(normalized)
+            try:
+                base_data = await self._load_from_free_dictionary(normalized)
+            except (DictionaryWordNotFound, DictionaryProviderError) as exc:
+                # 무료 provider의 간헐적인 timeout으로 Hover 전체가 실패하지 않도록
+                # Wiktionary를 보조 provider로 사용한다. 기본 provider가 복구되면
+                # 다음 캐시 만료 후 다시 Free Dictionary 결과를 우선 사용한다.
+                logger.warning(
+                    "dictionary_primary_provider_failed error_type=%s",
+                    type(exc).__name__,
+                )
+                try:
+                    base_data = await self._load_from_wiktionary(normalized)
+                except DictionaryWordNotFound:
+                    if isinstance(exc, DictionaryWordNotFound):
+                        raise
+                    raise DictionaryProviderError(
+                        "사전 외부 서비스를 잠시 사용할 수 없습니다."
+                    ) from exc
+                except DictionaryProviderError as fallback_exc:
+                    raise DictionaryProviderError(
+                        "사전 외부 서비스를 잠시 사용할 수 없습니다."
+                    ) from fallback_exc
             # 기본 번역은 문맥 없이 저장해 특정 자막 문장이 다른 조회 결과를
             # 오염시키지 않게 한다. 문맥 번역은 아래에서 별도의 키로 처리한다.
             base_data["definition_translations"] = list(
@@ -174,18 +258,14 @@ class DictionaryService:
             ),
             examples=tuple(base_data.get("examples", [])),
             context_meaning=context_meaning,
-            source="redis" if cache_hit else "free_dictionary",
+            source="redis" if cache_hit else base_data.get("source", "free_dictionary"),
             cache_hit=cache_hit,
         )
 
     async def _load_from_free_dictionary(self, word: str) -> dict[str, Any]:
         """Free Dictionary API를 호출해 영어 원문 정의를 가져온다."""
 
-        encoded_word = quote(word, safe="")
-        if "{word}" in settings.dictionary_api_url:
-            url = settings.dictionary_api_url.format(word=encoded_word)
-        else:
-            url = f"{settings.dictionary_api_url.rstrip('/')}/{encoded_word}"
+        url = self._build_provider_url(settings.dictionary_api_url, word)
 
         try:
             async with httpx.AsyncClient(
@@ -208,6 +288,52 @@ class DictionaryService:
             raise DictionaryProviderError("사전 API를 사용할 수 없습니다.") from exc
 
         return parse_free_dictionary_payload(payload, word)
+
+    async def _load_from_wiktionary(self, word: str) -> dict[str, Any]:
+        """Wiktionary REST API를 보조 provider로 호출해 영어 정의를 가져온다."""
+
+        url = self._build_provider_url(settings.dictionary_fallback_api_url, word)
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.dictionary_timeout_seconds
+            ) as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        "Accept": "application/json",
+                        # Wikimedia API가 자동화 요청을 구분할 수 있도록
+                        # 서비스 식별 정보를 보낸다.
+                        "User-Agent": "SubSync/0.1 (educational project)",
+                    },
+                )
+                if response.status_code == 404:
+                    raise DictionaryWordNotFound(word)
+                response.raise_for_status()
+                payload = response.json()
+        except DictionaryWordNotFound:
+            raise
+        except (
+            httpx.TimeoutException,
+            httpx.RequestError,
+            httpx.HTTPStatusError,
+            ValueError,
+        ) as exc:
+            logger.warning(
+                "dictionary_fallback_provider_failed error_type=%s",
+                type(exc).__name__,
+            )
+            raise DictionaryProviderError("보조 사전 API를 사용할 수 없습니다.") from exc
+
+        return parse_wiktionary_payload(payload, word)
+
+    @staticmethod
+    def _build_provider_url(base_url: str, word: str) -> str:
+        """환경변수의 URL 형식에 맞춰 단어 경로를 만든다."""
+
+        encoded_word = quote(word, safe="")
+        if "{word}" in base_url:
+            return base_url.format(word=encoded_word)
+        return f"{base_url.rstrip('/')}/{encoded_word}"
 
     async def _translate_definitions(
         self,

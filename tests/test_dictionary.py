@@ -11,10 +11,12 @@ from app.api.v1.dictionary import get_dictionary_service
 from app.cache.redis_client import RedisJsonCache
 from app.main import app
 from app.services.dict_service import (
+    DictionaryProviderError,
     DictionaryResult,
     DictionaryService,
     normalize_word,
     parse_free_dictionary_payload,
+    parse_wiktionary_payload,
 )
 
 
@@ -83,6 +85,34 @@ def test_parse_free_dictionary_payload_extracts_definition_and_example():
     assert parsed["examples"] == ["She was honest about the mistake."]
 
 
+def test_parse_wiktionary_payload_extracts_english_entry_and_removes_markup():
+    """보조 provider 응답의 HTML 링크를 화면용 텍스트로 정리한다."""
+
+    parsed = parse_wiktionary_payload(
+        {
+            "en": [
+                {
+                    "partOfSpeech": "Adjective",
+                    "definitions": [
+                        {
+                            "definition": "<a>Scrupulous</a> with regard to truth.",
+                            "examples": ["<b>honest</b> reporting"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "honest",
+    )
+
+    assert parsed["part_of_speech"] == "Adjective"
+    assert parsed["english_definitions"] == [
+        "Scrupulous with regard to truth."
+    ]
+    assert parsed["examples"] == ["honest reporting"]
+    assert parsed["source"] == "wiktionary"
+
+
 def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     """첫 조회 뒤 같은 단어를 다시 요청하면 외부 사전 호출을 생략한다."""
 
@@ -116,6 +146,43 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     assert second.cache_hit is True
     assert calls == {"dictionary": 1, "deepl": 1}
     assert list(cache.values) == ["dictionary:v1:word:honest"]
+
+
+def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypatch):
+    """Free Dictionary timeout 때 보조 provider 결과로 조회를 계속한다."""
+
+    service = DictionaryService(cache=MemoryCache())
+
+    async def primary_provider_error(word: str) -> dict[str, Any]:
+        raise DictionaryProviderError("timeout")
+
+    async def fallback_dictionary(word: str) -> dict[str, Any]:
+        return {
+            "phonetic": None,
+            "part_of_speech": "Adjective",
+            "english_definitions": ["Truthful and sincere"],
+            "examples": [],
+            "source": "wiktionary",
+        }
+
+    async def fake_translate(
+        definitions: list[str],
+        context: str | None,
+    ) -> tuple[str, ...]:
+        return ("정직한",)
+
+    monkeypatch.setattr(
+        service,
+        "_load_from_free_dictionary",
+        primary_provider_error,
+    )
+    monkeypatch.setattr(service, "_load_from_wiktionary", fallback_dictionary)
+    monkeypatch.setattr(service, "_translate_definitions", fake_translate)
+
+    result = asyncio.run(service.lookup("honest"))
+
+    assert result.source == "wiktionary"
+    assert result.definition_translations == ("정직한",)
 
 
 class FakeDictionaryService:

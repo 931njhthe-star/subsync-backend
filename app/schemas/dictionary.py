@@ -22,7 +22,9 @@ class DictionaryHoverResponse(BaseModel):
             "번역 실패 시 영어 정의가 fallback으로 들어갈 수 있음"
         ),
     )
-    source: str = Field(description="응답 출처: redis 또는 free_dictionary")
+    source: str = Field(
+        description="응답 출처: redis, free_dictionary 또는 wiktionary"
+    )
     cache_hit: bool = Field(description="기본 단어 캐시 적중 여부")
 
 
@@ -47,5 +49,7 @@ class DictionaryDetailResponse(BaseModel):
         default=None,
         description="인증·saved_words 연동 전에는 null",
     )
-    source: str = Field(description="응답 출처: redis 또는 free_dictionary")
+    source: str = Field(
+        description="응답 출처: redis, free_dictionary 또는 wiktionary"
+    )
     cache_hit: bool = Field(description="기본 단어 캐시 적중 여부")
