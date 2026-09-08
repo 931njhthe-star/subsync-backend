@@ -1,0 +1,31 @@
+$kind: http-request
+description: 2번 요청의 conversation_id를 자동으로 사용해 대화 문맥을 이어 갑니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "video_id": "{{video_id}}",
+      "timestamp": {{timestamp}},
+      "conversation_id": "{{conversation_id}}",
+      "user_message": "그 단어의 반대말은 무엇인가요?",
+      "recent_subtitles": [
+        {
+          "time": 36.8,
+          "en": "English spelling is famously inconsistent.",
+          "ko": "영어 철자는 유난히 일관성이 없습니다."
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('문맥을 이어 답변한다', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().reply).to.be.a('string').and.not.empty;
+      });
+    language: text/javascript
+order: 1000

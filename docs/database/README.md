@@ -23,8 +23,10 @@
 
 ## 현재 애플리케이션 상태
 
-현재 FastAPI는 Tutor 대화·피드백·사용량을 개발용 메모리에만 기록한다. 이 DB 테이블을
-읽거나 쓰는 repository는 아직 구현되어 있지 않다.
+현재 FastAPI는 Tutor 대화·피드백을 개발용 메모리에 기록한다. Tutor 토큰 사용량은
+`llm_usage`에, HTTP 운영 로그는 `api_logs`에 기록하며, Streamlit Dashboard API가 두
+테이블을 기간별로 읽어 KPI·provider/model·endpoint별 집계로 반환한다. Supabase 설정이
+없으면 로컬 개발을 위해 조회는 빈 목록, 저장은 no-op으로 동작한다.
 
 ## 미확인 항목
 

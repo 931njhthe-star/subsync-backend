@@ -134,12 +134,17 @@ class TutorUsageSummaryResponse(BaseModel):
 
 
 class ProactiveAnswerFeedbackResponse(BaseModel):
-    """선제 질문 답에 대한 Tutor 판정과 사용자가 확인할 기준."""
+    """선제 질문 답에 대한 피드백과 사용자가 확인할 기준."""
 
+<<<<<<< Updated upstream
+    result: Literal["correct", "partial", "incorrect"] = Field(
+        description="정답, 부분 정답 또는 오답",
+=======
     result: Literal["correct", "partial", "incorrect", "unavailable"] = Field(
-        description="정답, 부분 정답, 오답 또는 stub provider의 판정 불가",
+        description="정답, 부분 정답, 오답 또는 자동 판정 불가",
+>>>>>>> Stashed changes
     )
-    criteria: str = Field(description="판정 이유와 정답으로 인정되는 기준")
+    criteria: str = Field(description="사용자 답변과 자막 의미를 비교한 근거")
 
 
 class TutorAskResponse(BaseModel):
@@ -175,7 +180,7 @@ class TutorAskResponse(BaseModel):
     )
     proactive_feedback: ProactiveAnswerFeedbackResponse | None = Field(
         default=None,
-        description="선제 질문에 답한 경우에만 제공하는 판정 결과",
+        description="명시한 선제 질문에 답한 경우에만 제공하는 선택적 피드백",
     )
 
 
@@ -206,6 +211,7 @@ class ProactiveTutorResponse(BaseModel):
     reason: Literal[
         "new_expression",
         "cooldown",
+        "initial_cooldown",
         "insufficient_context",
         "already_seen",
         "paused",

@@ -12,6 +12,7 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.tutor import router as tutor_router
 from app.core.config import settings
 from app.db.api_logs import ApiLogEntry, ApiLogRepository
@@ -108,6 +109,7 @@ async def write_api_log(request: Request, call_next) -> Response:
 
 # 버전이 필요한 기능은 `/api/v1` 아래에 모아 이후 하위 호환성을 유지한다.
 app.include_router(tutor_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
 
 
 @app.get("/health")
