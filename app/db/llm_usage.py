@@ -23,11 +23,9 @@ class LLMUsageEntry:
     input_tokens: int
     output_tokens: int
     total_tokens: int
-<<<<<<< Updated upstream
-=======
     finish_reason: str | None = None  # stop: 모델이 자연스럽게 답변을 끝냄 / length: 최대 출력 토큰에 도달해 답변이 잘림  / content_filter 또는 safety: 안전 정책에 따라 생성이 중단됨
     provider_latency: int | None = None
->>>>>>> Stashed changes
+
 
     def as_row(self) -> dict[str, object]:
         """``public.llm_usage`` INSERT에 사용할 현재 시각의 행을 반환한다."""

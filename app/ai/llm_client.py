@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Protocol
 
 from app.ai.prompts import TutorPrompt
@@ -52,12 +53,18 @@ class TokenUsage:
 
 @dataclass(frozen=True)
 class LLMGeneration:
-    """모델 원문 응답과 provider/usage 메타데이터."""
+    """모델 원문과 사용량·종료 사유·provider 왕복 시간 메타데이터.
+
+    ``provider_latency``는 provider HTTP 요청을 보낸 뒤 응답을 받을 때까지의
+    밀리초 단위 시간이다. 응답 본문 파싱 시간과 Tutor 후처리 시간은 포함하지 않는다.
+    """
 
     text: str
     provider: str
     model: str
     usage: TokenUsage = TokenUsage()
+    finish_reason: str | None = None
+    provider_latency: int | None = None
 
 
 class LLMClient(Protocol):
@@ -75,6 +82,14 @@ def _as_non_negative_int(value: object) -> int:
     except (TypeError, ValueError):
         return 0
     return max(number, 0)
+
+
+def _as_optional_text(value: object) -> str | None:
+    """provider 메타데이터의 선택 문자열을 빈 값 없이 정규화한다."""
+
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
 
 
 def _retry_after_seconds(headers: object) -> float | None:
@@ -232,6 +247,7 @@ class GeminiClient:
             "generationConfig": generation_config,
         }
 
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
@@ -247,6 +263,7 @@ class GeminiClient:
                 f"Gemini request failed: {exc}",
                 provider=self.name,
             ) from exc
+        provider_latency = round((perf_counter() - started_at) * 1_000)
 
         if response.is_error:
             detail = response.text[:500]
@@ -259,7 +276,8 @@ class GeminiClient:
 
         try:
             data = response.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            candidate = data["candidates"][0]
+            text = candidate["content"]["parts"][0]["text"]
             metadata = data.get("usageMetadata") or {}
             usage = TokenUsage(
                 input_tokens=_as_non_negative_int(metadata.get("promptTokenCount")),
@@ -275,6 +293,8 @@ class GeminiClient:
                 provider=self.name,
                 model=self.model,
                 usage=usage,
+                finish_reason=_as_optional_text(candidate.get("finishReason")),
+                provider_latency=provider_latency,
             )
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(
@@ -332,6 +352,7 @@ class GroqClient:
             "max_tokens": max(self.max_output_tokens, 1),
         }
 
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
@@ -347,6 +368,7 @@ class GroqClient:
                 f"Groq request failed: {exc}",
                 provider=self.name,
             ) from exc
+        provider_latency = round((perf_counter() - started_at) * 1_000)
 
         if response.is_error:
             detail = response.text[:500]
@@ -359,7 +381,8 @@ class GroqClient:
 
         try:
             data = response.json()
-            message = data["choices"][0]["message"]
+            choice = data["choices"][0]
+            message = choice["message"]
             text = message["content"]
             if isinstance(text, list):
                 text = "".join(
@@ -383,6 +406,8 @@ class GroqClient:
                 provider=self.name,
                 model=self.model,
                 usage=usage,
+                finish_reason=_as_optional_text(choice.get("finish_reason")),
+                provider_latency=provider_latency,
             )
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(

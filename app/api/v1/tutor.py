@@ -314,6 +314,8 @@ async def ask_tutor(
             input_tokens=result.answer.usage.input_tokens,
             output_tokens=result.answer.usage.output_tokens,
             total_tokens=result.answer.usage.normalized_total,
+            finish_reason=result.answer.finish_reason,
+            provider_latency=result.answer.provider_latency,
         ),
     )
 

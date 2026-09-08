@@ -872,7 +872,8 @@ class FakeGroqResponse:
                 {
                     "message": {
                         "content": '{"reply":"Groq 답변", "suggested_questions":[]}'
-                    }
+                    },
+                    "finish_reason": "stop",
                 }
             ],
             "usage": {
@@ -901,7 +902,8 @@ class FakeGeminiResponse:
                                 "text": '{"reply":"Gemini 답변", "suggested_questions":[]}'
                             }
                         ]
-                    }
+                    },
+                    "finishReason": "STOP",
                 }
             ],
             "usageMetadata": {
@@ -959,6 +961,9 @@ def test_groq_client_parses_openai_compatible_response(monkeypatch):
     assert generation.provider == "groq"
     assert generation.model == "openai/gpt-oss-20b"
     assert generation.usage.total_tokens == 366
+    assert generation.finish_reason == "stop"
+    assert generation.provider_latency is not None
+    assert generation.provider_latency >= 0
     assert FakeAsyncClient.last_call["url"].endswith("/chat/completions")
     assert FakeAsyncClient.last_call["headers"]["Authorization"] == "Bearer gsk_test"
 
@@ -986,6 +991,9 @@ def test_gemini3_client_limits_thinking_level_for_tutor_json(monkeypatch):
     assert generation.provider == "gemini"
     assert generation.model == "gemini-3.6-flash"
     assert generation.usage.total_tokens == 366
+    assert generation.finish_reason == "STOP"
+    assert generation.provider_latency is not None
+    assert generation.provider_latency >= 0
     assert FakeAsyncClient.last_call["json"]["generationConfig"]["thinkingConfig"] == {
         "thinkingLevel": "low"
     }
