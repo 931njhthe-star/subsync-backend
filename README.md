@@ -41,10 +41,6 @@ subsync-backend/
 │   ├── schemas/             # Pydantic 요청·응답 모델
 │   ├── services/            # 비즈니스 로직
 │   └── main.py              # FastAPI 애플리케이션 진입점
-├── dashboard/               # Streamlit 운영·분석 대시보드
-│   ├── analytics/
-│   ├── components/
-│   └── app.py
 ├── docs/
 │   ├── api_spec.md          # 프론트엔드-백엔드 API 계약
 │   ├── architecture.md      # 시스템 아키텍처
