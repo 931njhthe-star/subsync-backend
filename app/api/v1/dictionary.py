@@ -12,6 +12,8 @@ from app.services.dict_service import (
     DictionaryProviderError,
     DictionaryService,
     DictionaryWordNotFound,
+    select_distinct_meanings,
+    select_shortest_meaning,
 )
 
 
@@ -63,10 +65,14 @@ async def get_hover_meaning(
     """로그인 없이 Hover용 빠른 단어 뜻을 반환한다."""
 
     result = await _lookup_or_http_error(service, word, context)
-    meanings = list(result.definition_translations or result.english_definitions)
     if result.context_meaning:
-        # 자막 문장이 있으면 일반적인 번역보다 현재 문장에서의 뜻을 먼저 보여준다.
-        meanings.insert(0, result.context_meaning)
+        # Hover는 영상 시청을 방해하지 않도록 문맥상 대표 뜻 하나만 보여준다.
+        meanings = [result.context_meaning]
+    else:
+        shortest_meaning = select_shortest_meaning(
+            result.definition_translations or result.english_definitions
+        )
+        meanings = [shortest_meaning] if shortest_meaning else []
     return DictionaryHoverResponse(
         word=result.word,
         meanings=meanings,
@@ -94,13 +100,21 @@ async def get_dictionary_detail(
     """
 
     result = await _lookup_or_http_error(service, word, context)
-    definitions = list(result.definition_translations or result.english_definitions)
+    definitions = list(
+        select_distinct_meanings(
+            result.definition_translations or result.english_definitions,
+            max_count=5,
+        )
+    )
+    english_definitions = list(
+        select_distinct_meanings(result.english_definitions, max_count=5)
+    )
     return DictionaryDetailResponse(
         word=result.word,
         phonetic=result.phonetic,
         part_of_speech=result.part_of_speech,
         definitions=definitions,
-        english_definitions=list(result.english_definitions),
+        english_definitions=english_definitions,
         context_meaning=result.context_meaning,
         examples=list(result.examples),
         is_saved=None,

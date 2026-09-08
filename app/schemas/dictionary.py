@@ -18,8 +18,8 @@ class DictionaryHoverResponse(BaseModel):
     word: str = Field(description="조회한 단어", examples=["honest"])
     meanings: list[str] = Field(
         description=(
-            "한국어 뜻 목록. 자막 문맥 뜻이 있으면 첫 항목으로 제공하며, "
-            "번역 실패 시 영어 정의가 fallback으로 들어갈 수 있음"
+            "자막 문맥이 있으면 대표 뜻 하나를 제공하며, 문맥이 없으면 "
+            "가장 짧은 뜻 하나를 제공함"
         ),
     )
     source: str = Field(
@@ -34,8 +34,12 @@ class DictionaryDetailResponse(BaseModel):
     word: str = Field(description="조회한 단어", examples=["honest"])
     phonetic: str | None = Field(default=None, description="발음 기호")
     part_of_speech: str | None = Field(default=None, description="품사")
-    definitions: list[str] = Field(description="한국어 정의 목록")
-    english_definitions: list[str] = Field(description="Free Dictionary의 영어 정의")
+    definitions: list[str] = Field(
+        description="중복을 줄인 한국어 정의 최대 5개"
+    )
+    english_definitions: list[str] = Field(
+        description="중복을 줄인 영어 정의 최대 5개"
+    )
     context_meaning: str | None = Field(
         default=None,
         description="자막 문장을 참고한 문맥상 의미",

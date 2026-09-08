@@ -7,7 +7,8 @@ import html
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from difflib import SequenceMatcher
+from typing import Any, Iterable
 from urllib.parse import quote
 
 import httpx
@@ -55,6 +56,86 @@ def normalize_word(word: str) -> str:
     if not cleaned or len(cleaned) > 100:
         raise ValueError("검색 단어는 1~100자여야 합니다.")
     return cleaned.casefold()
+
+
+def select_distinct_meanings(
+    meanings: Iterable[str],
+    max_count: int = 5,
+) -> tuple[str, ...]:
+    """비슷한 뜻을 하나로 보고 앞에서부터 최대 개수만 선택한다.
+
+    provider마다 같은 뜻을 문장형·단어형으로 반복해서 보내는 경우가 있어,
+    상세 화면이 같은 번역으로 채워지지 않도록 간단한 문자열 유사도 기준을
+    적용한다. ``세다/계산하다``와 ``중요하다``처럼 짧지만 다른 뜻은 보존한다.
+    """
+
+    if max_count <= 0:
+        return ()
+
+    selected: list[str] = []
+    selected_keys: list[str] = []
+    for meaning in meanings:
+        if not isinstance(meaning, str):
+            continue
+        cleaned = re.sub(r"\s+", " ", meaning.strip())
+        if not cleaned:
+            continue
+
+        key = re.sub(r"[\W_]+", "", cleaned.casefold())
+        if not key:
+            continue
+        if any(_meanings_are_similar(key, selected_key) for selected_key in selected_keys):
+            continue
+
+        selected.append(cleaned)
+        selected_keys.append(key)
+        if len(selected) >= max_count:
+            break
+
+    return tuple(selected)
+
+
+def select_shortest_meaning(meanings: Iterable[str]) -> str | None:
+    """중복을 제외한 뜻 중 가장 짧은 대표 뜻 하나를 반환한다."""
+
+    distinct = select_distinct_meanings(meanings, max_count=100)
+    return min(distinct, key=len) if distinct else None
+
+
+def _meanings_are_similar(left: str, right: str) -> bool:
+    """정확히 같거나 거의 같은 번역인지 판단한다."""
+
+    if left == right:
+        return True
+    shorter, longer = sorted((left, right), key=len)
+    if len(shorter) >= 3 and shorter in longer:
+        return True
+    return SequenceMatcher(None, left, right).ratio() >= 0.88
+
+
+def _select_context_meaning(
+    context_hint: str,
+    meanings: Iterable[str],
+) -> str:
+    """DeepL의 짧은 문맥 힌트와 일치하는 상세 뜻을 대표값으로 선택한다."""
+
+    hint_key = re.sub(r"[\W_]+", "", context_hint.casefold())
+    if not hint_key:
+        return context_hint
+
+    for meaning in select_distinct_meanings(meanings, max_count=100):
+        meaning_key = re.sub(r"[\W_]+", "", meaning.casefold())
+        # 접미사가 달라도 같은 어근(예: 솔직한/솔직하다)을 찾기 위해
+        # 문맥 힌트의 앞부분도 비교한다.
+        prefixes = {
+            hint_key,
+            hint_key[: max(2, len(hint_key) - 1)],
+            hint_key[:2],
+        }
+        if any(len(prefix) >= 2 and prefix in meaning_key for prefix in prefixes):
+            return meaning
+
+    return context_hint
 
 
 def parse_free_dictionary_payload(
@@ -239,9 +320,14 @@ class DictionaryService:
                 context_meaning = cached_context.get("context_meaning")
             else:
                 context_meaning = await self._translate_context(
-                    base_data["english_definitions"][0],
+                    normalized,
                     context.strip(),
                 )
+                if context_meaning:
+                    context_meaning = _select_context_meaning(
+                        context_meaning,
+                        base_data.get("definition_translations", []),
+                    )
                 if context_meaning:
                     await self.cache.set_json(
                         context_key,
@@ -258,7 +344,11 @@ class DictionaryService:
             ),
             examples=tuple(base_data.get("examples", [])),
             context_meaning=context_meaning,
-            source="redis" if cache_hit else base_data.get("source", "free_dictionary"),
+            source=(
+                "redis"
+                if cache_hit
+                else base_data.get("source", "free_dictionary")
+            ),
             cache_hit=cache_hit,
         )
 
@@ -387,10 +477,11 @@ class DictionaryService:
             and item["text"].strip()
         )
 
-    async def _translate_context(self, definition: str, context: str) -> str | None:
-        """자막 문맥을 참고해 대표 정의 하나의 문맥 뜻을 번역한다."""
+    async def _translate_context(self, word: str, context: str) -> str | None:
+        """자막 문맥을 참고해 단어의 짧은 문맥 뜻을 번역한다."""
 
-        translations = await self._translate_definitions([definition], context=context)
+        # 긴 정의문 대신 단어 자체를 보내야 Hover에 문장형 설명이 표시되지 않는다.
+        translations = await self._translate_definitions([word], context=context)
         return translations[0] if translations else None
 
     @staticmethod
@@ -398,4 +489,4 @@ class DictionaryService:
         """문맥 원문을 노출하지 않는 Redis 키를 만든다."""
 
         digest = hashlib.sha256(context.encode("utf-8")).hexdigest()[:16]
-        return f"dictionary:v1:context:{word}:{digest}"
+        return f"dictionary:v2:context:{word}:{digest}"

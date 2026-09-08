@@ -17,6 +17,7 @@ from app.services.dict_service import (
     normalize_word,
     parse_free_dictionary_payload,
     parse_wiktionary_payload,
+    select_distinct_meanings,
 )
 
 
@@ -46,6 +47,31 @@ def test_normalize_word_uses_one_cache_key_for_case_variants():
     """대소문자가 다른 같은 단어가 같은 Redis 키 기준을 사용한다."""
 
     assert normalize_word("  Honest, ") == "honest"
+
+
+def test_select_distinct_meanings_removes_similar_values_and_limits_to_five():
+    """상세 응답은 비슷한 뜻을 합치고 최대 5개까지만 제공한다."""
+
+    meanings = select_distinct_meanings(
+        [
+            "정직한",
+            "정직한 사람",
+            "세다/계산하다",
+            "중요하다",
+            "간주하다/믿다",
+            "정확하다",
+            "공정하다",
+        ],
+        max_count=5,
+    )
+
+    assert meanings == (
+        "정직한",
+        "세다/계산하다",
+        "중요하다",
+        "간주하다/믿다",
+        "정확하다",
+    )
 
 
 def test_invalid_redis_url_disables_cache_without_crashing():
@@ -185,6 +211,43 @@ def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypa
     assert result.definition_translations == ("정직한",)
 
 
+def test_dictionary_service_selects_contextual_meaning_from_translated_candidates(
+    monkeypatch,
+):
+    """문맥 힌트가 상세 뜻 후보와 일치하면 해당 뜻을 Hover 대표값으로 쓴다."""
+
+    service = DictionaryService(cache=MemoryCache())
+
+    async def fake_dictionary(word: str) -> dict[str, Any]:
+        return {
+            "phonetic": None,
+            "part_of_speech": "Adjective",
+            "english_definitions": ["Open; frank.", "Accurate."],
+            "examples": [],
+            "source": "free_dictionary",
+        }
+
+    async def fake_translate(
+        definitions: list[str],
+        context: str | None,
+    ) -> tuple[str, ...]:
+        if context:
+            return ("솔직한",)
+        return ("솔직한; 거침없는", "정확한")
+
+    monkeypatch.setattr(service, "_load_from_free_dictionary", fake_dictionary)
+    monkeypatch.setattr(service, "_translate_definitions", fake_translate)
+
+    result = asyncio.run(
+        service.lookup(
+            "honest",
+            context="You have to be honest with yourself.",
+        )
+    )
+
+    assert result.context_meaning == "솔직한; 거침없는"
+
+
 class FakeDictionaryService:
     """라우터 테스트에서 외부 API 대신 고정 응답을 반환한다."""
 
@@ -230,9 +293,7 @@ def test_dictionary_routes_return_hover_and_detail_contract():
 
     assert hover_response.status_code == 200
     assert hover_response.json()["meanings"] == [
-        "현재 문장에서는 솔직한 의미입니다.",
-        "정직한",
-        "솔직한",
+        "현재 문장에서는 솔직한 의미입니다."
     ]
     assert detail_response.status_code == 200
     assert detail_response.json()["context_meaning"] == (
