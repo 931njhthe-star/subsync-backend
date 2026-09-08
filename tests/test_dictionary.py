@@ -162,7 +162,7 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
         calls["deepl"] += 1
         return ("정직한",)
 
-    monkeypatch.setattr(service, "_load_from_free_dictionary", fake_dictionary)
+    monkeypatch.setattr(service, "_load_from_wiktionary", fake_dictionary)
     monkeypatch.setattr(service, "_translate_definitions", fake_translate)
 
     first = asyncio.run(service.lookup("honest"))

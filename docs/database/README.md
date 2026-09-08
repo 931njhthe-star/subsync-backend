@@ -23,8 +23,14 @@
 
 ## 현재 애플리케이션 상태
 
-현재 FastAPI는 Tutor 대화·피드백·사용량을 개발용 메모리에만 기록한다. 이 DB 테이블을
-읽거나 쓰는 repository는 아직 구현되어 있지 않다.
+현재 FastAPI는 Tutor 대화·피드백·사용량을 개발용 메모리에 기록한다. 저장 단어는
+`app/db/saved_words.py` repository와 `/api/v1/words` API를 통해 Supabase에 저장·조회한다.
+Google OAuth가 연결되기 전까지는 개발 환경에서만 `X-Dev-User-ID` header로 테스트 사용자
+UUID를 전달한다. OAuth 연결 후에는 검증된 JWT의 `sub`로 교체해야 한다.
+
+`saved_words.word_lower`는 `lower(trim(word))`를 저장하는 중복 확인용 컬럼이다.
+`(user_id, word_lower)` unique index로 같은 사용자의 `Apple`과 `apple`을 하나로 처리한다.
+기존 DB에는 `docs/migrations/`의 migration을 적용한다.
 
 ## 미확인 항목
 

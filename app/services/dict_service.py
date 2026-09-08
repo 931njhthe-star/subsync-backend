@@ -279,7 +279,7 @@ class DictionaryService:
 
         if cached_base is None:
             try:
-                base_data = await self._load_from_free_dictionary(normalized)
+                base_data = await self._load_from_wiktionary(normalized)
             except (DictionaryWordNotFound, DictionaryProviderError) as exc:
                 # 무료 provider의 간헐적인 timeout으로 Hover 전체가 실패하지 않도록
                 # Wiktionary를 보조 provider로 사용한다. 기본 provider가 복구되면
@@ -382,7 +382,7 @@ class DictionaryService:
     async def _load_from_wiktionary(self, word: str) -> dict[str, Any]:
         """Wiktionary REST API를 보조 provider로 호출해 영어 정의를 가져온다."""
 
-        url = self._build_provider_url(settings.dictionary_fallback_api_url, word)
+        url = self._build_provider_url(settings.dictionary_api_url, word)
         try:
             async with httpx.AsyncClient(
                 timeout=settings.dictionary_timeout_seconds

@@ -32,6 +32,12 @@ Collection을 제공한다.
 거부 예시가 있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한
 `conversation_id`와 `message_id`를 자동으로 이어서 사용한다.
 
+`▶ 저장 단어 — OAuth 연결 전 개발용` 폴더는 Google OAuth가 아직 연결되지 않은
+상태에서 저장 단어 API를 확인할 때 사용한다. Collection 변수 `dev_user_id`를
+Supabase `public.users`에 실제로 존재하는 UUID로 바꾼 뒤 저장·조회·삭제 요청을
+순서대로 실행한다. 이 임시 header 방식은 개발 환경에서만 동작하며, OAuth 연동 후에는
+`Authorization: Bearer <access_token>` 방식으로 교체한다.
+
 ## 인증 토큰 사용
 
 현재 Tutor API에는 인증 dependency가 연결되어 있지 않으므로 토큰 없이 실행된다.

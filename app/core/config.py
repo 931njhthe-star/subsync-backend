@@ -5,6 +5,16 @@
 
 import os
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_FILE, override=False)
+
+# print("env_path=", ENV_FILE)
+# print("env_file_exists=", ENV_FILE.exists())
+# print("deepl_key_present=", bool(os.getenv("DEEPL_API_KEY")))
+
 
 class Settings:
     """환경변수에서 읽은 애플리케이션 설정을 보관한다.
@@ -29,7 +39,7 @@ class Settings:
     dictionary_api_url: str = (
         os.getenv(
             "DICTIONARY_API_URL",
-            "https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
         ).strip()
         or "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
     )
@@ -45,6 +55,7 @@ class Settings:
         or "https://en.wiktionary.org/api/rest_v1/page/definition/{word}"
     )
     deepl_api_key: str = os.getenv("DEEPL_API_KEY", "").strip()
+    print("DEEPL_API_KEY", deepl_api_key)
     deepl_api_base_url: str = (
         os.getenv("DEEPL_API_BASE_URL", "https://api-free.deepl.com").strip()
         or "https://api-free.deepl.com"
