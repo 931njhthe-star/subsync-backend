@@ -8,14 +8,26 @@ YouTube 자막 문맥을 활용하는 AI Video Tutor의 FastAPI 백엔드입니�
 - `POST /api/v1/tutor/ask`
 - `POST /api/v1/tutor/proactive`
 - `POST /api/v1/tutor/feedback`
+- `GET /api/v1/dashboard/overview`
+- `GET /api/v1/dashboard/usage`
+- `GET /api/v1/dashboard/api-calls`
 - Gemini/Groq provider와 네트워크 없이 동작하는 `stub` fallback
 
-Tutor 대화·피드백·사용량 제한은 현재 개발용 프로세스 메모리에 저장된다. Supabase Auth,
-영구 DB 저장, Redis 캐시는 아직 API에 연결되어 있지 않다.
+Tutor 대화·피드백·사용량 제한은 현재 개발용 프로세스 메모리에 저장된다. Tutor 호출의
+토큰 사용량은 `llm_usage`, HTTP 운영 로그는 `api_logs`에 기록하며, Dashboard 조회 API가
+두 테이블을 기간별로 집계해 반환한다. Supabase 설정이 없으면 Dashboard API는 빈 집계를
+반환한다.
 
 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 설정하면 API 요청의 경로, 상태 코드, 처리 시간만
 `api_logs`에 익명으로 기록한다. 요청·응답 본문과 사용자 메시지는 DB에 저장하지 않는다.
 `/api/v1/logs/event`는 현재 제공하지 않는 프론트엔드 이벤트 endpoint이므로 호출하지 않는다.
+
+Dashboard API의 기본 조회 기간은 최근 7일이며 `days=1~90`으로 변경할 수 있다.
+`/api/v1/dashboard/overview`는 두 테이블의 KPI와 최근 API 활동,
+`/api/v1/dashboard/usage`는 `llm_usage`의 provider/model·토큰 집계,
+`/api/v1/dashboard/api-calls`는 `api_logs`의 endpoint별
+호출량·성공률·응답 시간을 반환한다. 현재 대시보드 API는 로그인/관리자 권한 계층이 연결되기
+전인 개발용 계약이며, 운영 공개 전 Supabase 관리자 JWT dependency를 추가해야 한다.
 
 ## 기준
 

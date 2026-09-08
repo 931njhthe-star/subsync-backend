@@ -1,0 +1,13 @@
+$kind: http-request
+description: 서버가 실행 중인지 확인합니다.
+url: "{{base_url}}/health"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('서버가 정상 동작한다', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().status).to.eql('ok');
+      });
+    language: text/javascript
+order: 1000

@@ -11,7 +11,8 @@
     {"key":"timestamp","value":"42.1","type":"string"},
     {"key":"conversation_id","value":"","type":"string"},
     {"key":"message_id","value":"","type":"string"},
-    {"key":"proactive_question_id","value":"","type":"string"}
+    {"key":"proactive_question_id","value":"","type":"string"},
+    {"key":"dashboard_days","value":"7","type":"string"}
   ],
   "item": [
     {
@@ -71,6 +72,56 @@
           "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"not_helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"이미 평가한 Tutor 답변은 수정하거나 다시 선택할 수 없습니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('중복 평가는 거부된다', function () {","  pm.response.to.have.status(409);","});"]}}],
           "response":[]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard — 운영 지표 조회",
+      "description": "Streamlit Dashboard에서 사용할 llm_usage·api_logs 집계 API입니다. Supabase가 설정되지 않은 로컬 환경에서는 빈 집계가 반환됩니다.",
+      "item": [
+        {
+          "name": "7. Dashboard Home 요약",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10",
+            "description": "두 테이블의 KPI, 일별 AI 사용량, 최근 API 활동을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Dashboard Home 요약을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('tracked_user_count');","  pm.expect(body).to.have.property('daily_ai_usage');","  pm.expect(body.recent_activity).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "8. AI 사용량 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days={{dashboard_days}}",
+            "description": "llm_usage의 토큰 합계, provider/model별 사용량, 일별 사용량을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('AI 사용량을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('total_tokens');","  pm.expect(body.providers).to.be.an('array');","  pm.expect(body.daily_usage).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "9. API 호출 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/api-calls?days={{dashboard_days}}&recent_limit=10",
+            "description": "api_logs의 endpoint별 호출량, 성공률, latency, 최근 상태 코드를 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('API 호출 현황을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('success_rate');","  pm.expect(body.endpoints).to.be.an('array');","  pm.expect(body.recent_calls).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "10. Dashboard 잘못된 기간 입력",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days=0",
+            "description": "지원 범위(1~90일)를 벗어난 기간은 422로 거부합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('잘못된 기간을 거부한다', function () {","  pm.response.to.have.status(422);","});"]}}],
+          "response": []
         }
       ]
     }

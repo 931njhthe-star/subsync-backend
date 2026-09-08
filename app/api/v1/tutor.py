@@ -337,8 +337,8 @@ async def get_tutor_usage(
 ) -> TutorUsageSummaryResponse:
     """개발 Supabase에 저장된 전체 토큰 사용량 합계를 반환한다.
 
-    현재 테이블에는 사용자 식별 컬럼이 없으므로 전체 개발 사용량만 조회한다. 인증을
-    연결할 때는 migration으로 JWT ``sub`` 컬럼을 추가하고 자신의 행만 조회해야 한다.
+    현재 Tutor 호출은 인증 전 개발 actor로 저장되어 전체 개발 사용량만 조회한다.
+    사용자별 조회가 필요해지면 JWT ``sub`` 기반 소유권 검사를 추가해야 한다.
     """
 
     try:

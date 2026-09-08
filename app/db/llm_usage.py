@@ -13,9 +13,9 @@ import httpx
 class LLMUsageEntry:
     """한 번의 Tutor provider 호출에서 발생한 토큰 사용량.
 
-    현재 Supabase ``llm_usage`` 테이블에는 사용자 식별 컬럼이 없으므로, 개발 중에는
-    모든 Tutor 호출의 provider 토큰만 기록한다. 로그인 연동 전 사용자별 집계가
-    필요해지면 별도 migration으로 JWT ``sub`` 컬럼을 추가해야 한다.
+    현재 Tutor 라우터는 인증 연동 전이라 ``user_id``를 저장하지 않는다. 테이블에
+    user_id가 이미 기록된 운영 행이 있으면 Dashboard API가 그 값을 기준으로
+    사용자별이 아닌 전체 고유 사용자 수를 집계할 수 있다.
     """
 
     provider: str
@@ -110,6 +110,51 @@ class LLMUsageRepository:
             output_tokens=sum(max(int(row.get("output_tokens") or 0), 0) for row in rows),
             total_tokens=sum(max(int(row.get("total_tokens") or 0), 0) for row in rows),
         )
+
+    async def list_recent(
+        self,
+        *,
+        since: datetime,
+        limit: int = 10_000,
+    ) -> list[dict[str, object]]:
+        """대시보드 집계에 필요한 기간 내 ``llm_usage`` 행을 조회한다.
+
+        Args:
+            since: ``used_at`` 기준으로 포함할 시작 시각(UTC).
+            limit: 한 번에 읽을 최대 행 수. 대시보드용 안전 상한은 10,000건이다.
+
+        Returns:
+            provider, model, token, 시각, 사용자 식별자를 담은 Supabase 행 목록.
+
+        Note:
+            현재 부트캠프 규모에서는 애플리케이션에서 집계한다. 데이터가 크게
+            늘어나면 동일 집계를 Supabase view/RPC로 옮겨 응답 크기를 줄인다.
+        """
+
+        if not self.is_configured:
+            return []
+
+        safe_limit = min(max(limit, 1), 10_000)
+        params = {
+            "select": (
+                "provider,model_name,input_tokens,output_tokens,total_tokens,"
+                "used_at,user_id"
+            ),
+            "used_at": f"gte.{since.astimezone(timezone.utc).isoformat()}",
+            "order": "used_at.desc",
+            "limit": str(safe_limit),
+        }
+        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+            response = await client.get(
+                f"{self._url}/rest/v1/llm_usage",
+                headers=self._headers(),
+                params=params,
+            )
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise ValueError("Supabase llm_usage 응답 형식이 올바르지 않습니다.")
+        return [row for row in rows if isinstance(row, dict)]
 
 
 __all__ = ["LLMUsageEntry", "LLMUsageRepository", "LLMUsageSummary"]

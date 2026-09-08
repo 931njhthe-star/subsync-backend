@@ -5,7 +5,7 @@ Collection을 제공한다.
 
 ## 구성 파일
 
-- `SubSync-API.postman_collection.json`: 바로 실행할 6개 요청과 자동 테스트 스크립트
+- `SubSync-API.postman_collection.json`: Tutor와 Dashboard 조회 요청 및 자동 테스트 스크립트
 - `SubSync-Local.postman_environment.json`: 선택 가능한 로컬 서버 주소 환경
 
 ## 실행 방법
@@ -31,6 +31,15 @@ Collection을 제공한다.
 `▶ 선택 기능 — 바로 실행 후 사용` 폴더에는 후속 대화, 선제 질문, 답변 평가와 중복 평가
 거부 예시가 있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한
 `conversation_id`와 `message_id`를 자동으로 이어서 사용한다.
+
+`Dashboard — 운영 지표 조회` 폴더에는 Streamlit 화면에 연결할 다음 조회 API가 있다.
+
+1. `GET /api/v1/dashboard/overview` — 두 테이블의 KPI와 최근 API 활동
+2. `GET /api/v1/dashboard/usage` — `llm_usage`의 토큰·provider/model·일별 집계
+3. `GET /api/v1/dashboard/api-calls` — `api_logs`의 endpoint·성공률·latency 집계
+
+조회 기간은 `dashboard_days` Collection 변수를 사용하며 1~90일을 지원한다. Supabase
+설정이 없는 로컬 환경에서는 정상 응답과 함께 빈 배열·0 집계가 반환된다.
 
 ## 인증 토큰 사용
 
