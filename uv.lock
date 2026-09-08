@@ -418,6 +418,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -431,6 +432,7 @@ dev = [
 requires-dist = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "uvicorn", extras = ["standard"] },
 ]
 

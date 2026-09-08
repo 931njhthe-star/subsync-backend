@@ -13,7 +13,7 @@ Collection을 제공한다.
 1. FastAPI 서버를 실행한다.
 
    ```powershell
-   uv run uvicorn app.main:app --reload --port 8000 --env-file .env
+   uv run uvicorn app.main:app --reload --port 8000
    ```
 
 2. Postman에서 **Import**를 선택하고 위의 Collection JSON을 가져온다.
@@ -34,13 +34,16 @@ Collection을 제공한다.
 
 ## 인증 토큰 사용
 
-현재 Tutor API에는 인증 dependency가 연결되어 있지 않으므로 토큰 없이 실행된다.
-Supabase Auth를 도입하면 보호 API 요청에 다음 헤더를 추가한다.
+Tutor API는 로그인 없이 실행된다. 로그인 동기화는 선택 폴더의 7~9번 요청이다.
+
+1. 확장 프로그램에서 Google 로그인한다.
+2. `chrome.storage.local`의 `subsync_token` 또는 세션 `access_token`을 복사한다.
+3. Collection 변수 `access_token`에 넣는다. `service_role` 키는 넣지 않는다.
+4. `7. 로그인 세션 확인`을 실행하면 `public.users`와 `login_history`가 채워진다.
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-Google OAuth 자체는 브라우저 로그인과 동의 화면이 포함되므로 Postman Collection에서
-계정 로그인을 완전히 자동화하지 않는다. 로그인 후 발급된 Supabase Access Token으로
-백엔드 API를 검증하는 방식이다.
+토큰이 없으면 `GET /api/v1/auth/me`는 401이다. Google OAuth 창은 Postman에서
+자동화하지 않는다.

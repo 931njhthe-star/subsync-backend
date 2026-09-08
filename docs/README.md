@@ -9,6 +9,7 @@ FastAPI 라우터와 테스트가 최종 기준이며, DB의 실제 생성 기�
 ```text
 docs/
 ├── onboarding.md                         # 로컬 실행과 작업 시작 방법
+├── auth-login.md                         # Google 로그인·users/login_history 연동
 └── database/
     ├── README.md                         # SQL 정본, 실행 순서, 정합성 점검 결과
     ├── 1. users.sql ... 6. api_logs.sql
@@ -18,9 +19,10 @@ docs/
 ## 권장 읽는 순서
 
 1. [온보딩 안내](onboarding.md)와 저장소 루트의 `AGENTS.md`를 읽는다.
-2. API 계약은 로컬 서버의 `/docs`, Postman Collection, `tests/`를 기준으로 확인하고,
+2. 로그인·`users`/`login_history` 연동은 [auth-login.md](auth-login.md)를 확인한다.
+3. API 계약은 로컬 서버의 `/docs`, Postman Collection, `tests/`를 기준으로 확인하고,
    AI·DB 작업은 해당 문서를 읽는다.
-3. DB 변경 전에는 반드시 [DB 기준과 점검 결과](database/README.md)를 확인한다.
+4. DB 변경 전에는 반드시 [DB 기준과 점검 결과](database/README.md)를 확인한다.
 
 ## 변경 규칙
 

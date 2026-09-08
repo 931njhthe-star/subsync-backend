@@ -23,8 +23,9 @@
 
 ## 현재 애플리케이션 상태
 
-현재 FastAPI는 Tutor 대화·피드백·사용량을 개발용 메모리에만 기록한다. 이 DB 테이블을
-읽거나 쓰는 repository는 아직 구현되어 있지 않다.
+`GET /api/v1/auth/me`와 `POST /api/v1/auth/logout`이 `public.users`와
+`login_history`를 읽고 쓴다. Tutor 대화·피드백은 아직 개발용 메모리에 두고,
+`saved_words` repository는 구현되어 있지 않다.
 
 ## 미확인 항목
 

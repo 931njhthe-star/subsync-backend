@@ -5,13 +5,17 @@ YouTube 자막 문맥을 활용하는 AI Video Tutor의 FastAPI 백엔드입니�
 ## 현재 구현
 
 - `GET /health`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
 - `POST /api/v1/tutor/ask`
 - `POST /api/v1/tutor/proactive`
 - `POST /api/v1/tutor/feedback`
 - Gemini/Groq provider와 네트워크 없이 동작하는 `stub` fallback
 
-Tutor 대화·피드백·사용량 제한은 현재 개발용 프로세스 메모리에 저장된다. Supabase Auth,
-영구 DB 저장, Redis 캐시는 아직 API에 연결되어 있지 않다.
+`GET /api/v1/auth/me`는 확장 프로그램이 발급한 Supabase Access Token을 검증하고
+`public.users`와 `login_history`를 채운다. Google OAuth 창은 백엔드가 열지 않는다.
+Tutor는 로그인 없이 사용할 수 있다. Tutor 대화·피드백·사용량 제한의 일부는 아직
+개발용 프로세스 메모리에 저장된다. Redis 캐시는 API에 연결되어 있지 않다.
 
 `SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 설정하면 API 요청의 경로, 상태 코드, 처리 시간만
 `api_logs`에 익명으로 기록한다. 요청·응답 본문과 사용자 메시지는 DB에 저장하지 않는다.
@@ -81,6 +85,7 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 
 - [문서 인덱스](docs/README.md)
 - [온보딩 안내](docs/onboarding.md)
+- [로그인 연동 변경사항과 주의사항](docs/auth-login.md)
 - [DB 기준과 스키마](docs/database/README.md)
 
 ## 개발 원칙

@@ -1,9 +1,19 @@
 """애플리케이션 설정.
 
 환경변수로부터 Video Tutor 실행 설정과 외부 LLM 키를 로드한다.
+`--env-file` 없이 서버를 켜도 백엔드 루트의 `.env`를 읽는다.
 """
 
 import os
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# pytest는 stub provider를 쓰기 위해 `.env`를 읽지 않는다.
+# 서버 실행 시에는 `--env-file` 없이도 백엔드 루트 `.env`를 로드한다.
+if "pytest" not in sys.modules:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 class Settings:
@@ -22,6 +32,8 @@ class Settings:
     api_log_timeout_seconds: float = float(
         os.getenv("API_LOG_TIMEOUT_SECONDS", "2")
     )
+    # Access Token 검증과 users/login_history 동기화가 기다릴 최대 시간(초)이다.
+    auth_timeout_seconds: float = float(os.getenv("AUTH_TIMEOUT_SECONDS", "2"))
     # Tutor 사용량 저장도 API 로그와 같은 서버 전용 키를 사용한다. DB 지연이 응답을
     # 방해하지 않도록 별도 timeout을 둘 수 있다.
     llm_usage_timeout_seconds: float = float(
