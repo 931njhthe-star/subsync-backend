@@ -136,14 +136,29 @@ class RuleBasedTutorClient:
                     "번역 자막과 함께 보면 문장 속 뜻과 쓰임을 더 정확하게 설명할 수 있어요."
                 )
         else:
+            expression = focus_word or "질문하신 표현"
             reply = (
-                "현재 시점에 연결된 자막이 없습니다. 영상의 자막 문장과 함께 질문해 "
-                "주시면 그 문맥에 맞춰 설명할게요."
+                f"{expression}에 대해 도와드릴게요. 자막 문맥이 없어도 일반적인 뜻과 "
+                "쓰임을 중심으로 설명할 수 있어요."
             )
         response: dict[str, object] = {
             "reply": reply,
             "suggested_questions": [],
         }
+<<<<<<< Updated upstream
+=======
+        if prompt.context.is_proactive_answer:
+            hint = (
+                f"'{focus_word or '이 표현'}'가 들어간 문장을 다시 보고, 앞뒤 단어가 "
+                "어떤 의미를 더하는지 생각해 보세요."
+            )
+            response["proactive_feedback"] = {
+                "result": "unavailable",
+                "criteria": (
+                    f"힌트: {hint}"
+                ),
+            }
+>>>>>>> Stashed changes
         return json.dumps(response, ensure_ascii=False)
 
 

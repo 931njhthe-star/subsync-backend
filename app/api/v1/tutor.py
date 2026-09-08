@@ -41,6 +41,22 @@ logger = logging.getLogger(__name__)
 _DEVELOPMENT_ACTOR_ID = "test"
 
 
+def _format_proactive_feedback_reply(result: str, criteria: str) -> str:
+    """선제 질문의 채점 결과를 학습자를 격려하는 자연스러운 문장으로 만든다.
+
+    API의 ``result``와 ``criteria`` 값은 대시보드·클라이언트가 그대로 사용할 수 있게
+    유지하고, 사용자에게 보이는 ``reply``만 딱딱한 판정표 형식 대신 대화체로 바꾼다.
+    """
+
+    introductions = {
+        "correct": "맞아요, 정답이에요!",
+        "partial": "거의 맞았어요!",
+        "incorrect": "좋은 시도예요. 이 부분은 조금만 더 살펴볼까요?",
+        "unavailable": "좋은 시도예요!",
+    }
+    return f"{introductions.get(result, '답변을 확인했어요.')} {criteria}"
+
+
 @lru_cache(maxsize=1)
 def get_llm_usage_repository() -> LLMUsageRepository:
     """프로세스에서 공유할 Tutor 사용량 Supabase 저장소를 생성한다."""
@@ -303,6 +319,14 @@ async def ask_tutor(
 
     proactive_feedback = result.answer.proactive_feedback
     reply = result.answer.reply
+<<<<<<< Updated upstream
+=======
+    if proactive_feedback:
+        reply = _format_proactive_feedback_reply(
+            proactive_feedback.result,
+            proactive_feedback.criteria,
+        )
+>>>>>>> Stashed changes
 
     return TutorAskResponse(
         conversation_id=result.conversation_id,

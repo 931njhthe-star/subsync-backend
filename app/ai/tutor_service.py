@@ -78,6 +78,9 @@ _KOREAN_WORD_RE = re.compile(r"[가-힣]{2,}")
 _KOREAN_ENDING_RE = re.compile(
     r"(?:하다|하는|했다|할지|할|한다|이다|이에요|입니다|을|를|은|는|이|가|의|에|로|와|과)$"
 )
+_HINT_REQUEST_RE = re.compile(
+    r"(?:잘\s*)?모르겠(?:어|어요|다)?|힌트|답\s*알려\s*줘"
+)
 
 
 def _partial_json_field(raw: str, field: str) -> str | None:
@@ -126,6 +129,39 @@ def _recover_truncated_json(
     )
 
 
+def _extract_reply(parsed: dict[str, object]) -> str | None:
+    """provider가 ``reply`` 대신 흔히 쓰는 답변 키를 보수적으로 읽는다."""
+
+    for key in ("reply", "answer", "response", "content"):
+        value = parsed.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    message = parsed.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+    return None
+
+
+def _unparsed_response_hint(context: TutorContext) -> str:
+    """모든 provider의 형식 복구가 실패했을 때 학습 흐름을 잇는 안전한 답변을 만든다."""
+
+    focus_word = context.focus_word or "이 표현"
+    if context.is_proactive_answer:
+        current = context.current_subtitle
+        if current:
+            return (
+                f"힌트: '{focus_word}'가 나온 문장 \"{current.english}\"을 다시 보고, "
+                "앞뒤 단어가 어떤 의미를 더하는지 생각해 보세요."
+            )
+        return (
+            f"힌트: '{focus_word}'가 문장에서 어떤 역할을 하는지 떠올려 보고, "
+            "비슷한 한국어 표현을 찾아보세요."
+        )
+    return "질문하신 표현을 한 번 더 짧게 적어 주시면, 뜻과 쓰임을 차근차근 설명해 드릴게요."
+
+
 def _korean_roots(value: str) -> set[str]:
     """한국어 번역과 짧은 답을 비교할 수 있도록 기본 어간 후보를 만든다."""
 
@@ -168,8 +204,39 @@ def _apply_caption_answer_check(
         proactive_feedback=ProactiveAnswerFeedback(
             result="correct",
             criteria=(
-                f"자막의 한국어 번역에 '{matched_word}'가 포함되어 답변의 핵심 의미와 일치합니다."
+                f"자막의 한국어 번역에도 '{matched_word}'가 나와서 핵심 의미를 잘 짚었어요."
             ),
+        ),
+    )
+
+
+def _apply_hint_request_check(
+    answer: TutorAnswer,
+    context: TutorContext,
+) -> TutorAnswer:
+    """힌트 요청을 정답으로 오판하지 않고 문맥을 활용한 단서만 제공한다."""
+
+    if not _HINT_REQUEST_RE.search(context.user_message):
+        return answer
+
+    focus_word = context.focus_word or "이 표현"
+    current = context.current_subtitle
+    if current:
+        criteria = (
+            f"힌트: '{focus_word}'가 나온 문장 \"{current.english}\"을 다시 보고, "
+            "문장 전체의 분위기와 앞뒤 단어를 단서로 생각해 보세요."
+        )
+    else:
+        criteria = (
+            f"힌트: '{focus_word}'가 문장에서 어떤 역할을 하는지 떠올려 보고, "
+            "비슷한 한국어 표현을 찾아보세요."
+        )
+    return replace(
+        answer,
+        reply=criteria,
+        proactive_feedback=ProactiveAnswerFeedback(
+            result="unavailable",
+            criteria=criteria,
         ),
     )
 
@@ -220,8 +287,8 @@ def _parse_model_response(
     if not isinstance(parsed, dict):
         return fallback
 
-    reply = parsed.get("reply")
-    if not isinstance(reply, str) or not reply.strip():
+    reply = _extract_reply(parsed)
+    if reply is None:
         return fallback
 
     suggestions = parsed.get("suggested_questions", [])
@@ -251,7 +318,7 @@ def _parse_model_response(
                 )
 
     return TutorAnswer(
-        reply=reply.strip()[:4_000],
+        reply=reply[:4_000],
         suggested_questions=tuple(clean_suggestions),
         provider=fallback.provider,
         proactive_feedback=feedback,
@@ -279,7 +346,7 @@ async def _generate_answer(
     invalid_response_reply: str,
     expects_proactive_feedback: bool,
 ) -> TutorAnswer:
-    """한 provider의 응답을 API가 반환할 Tutor 답변으로 정규화한다."""
+    """한 provider 응답을 정규화하고, 형식 오류면 다음 fallback을 시도하게 한다."""
 
     generation = _coerce_generation(await client.generate(prompt), client)
     parsed = _parse_model_response(
@@ -293,6 +360,10 @@ async def _generate_answer(
         ),
         expects_proactive_feedback=expects_proactive_feedback,
     )
+    if parsed.reply == invalid_response_reply:
+        # JSON 복구에도 답변 필드를 찾지 못한 provider는 성공으로 처리하지 않는다.
+        # 그래야 TutorService가 네트워크 없는 fallback까지 한 번 더 시도할 수 있다.
+        raise LLMError("LLM response did not contain a usable reply")
     return TutorAnswer(
         reply=parsed.reply,
         suggested_questions=parsed.suggested_questions,
@@ -337,15 +408,20 @@ class TutorService:
             is_proactive_answer=command.is_proactive_answer,
         )
         prompt = build_tutor_prompt(context, profile)
+        recovery_reply = _unparsed_response_hint(context)
 
         try:
             answer = await _generate_answer(
                 self.llm_client,
                 prompt,
+<<<<<<< Updated upstream
                 invalid_response_reply=(
                     "답변을 정리하는 중에 문제가 있었어요. 자막 속 어떤 표현이 "
                     "궁금한지 다시 알려 주세요."
                 ),
+=======
+                invalid_response_reply=recovery_reply,
+>>>>>>> Stashed changes
                 expects_proactive_feedback=command.is_proactive_answer,
             )
         except LLMError:
@@ -356,18 +432,26 @@ class TutorService:
                 answer = await _generate_answer(
                     self.fallback_client,
                     prompt,
+<<<<<<< Updated upstream
                     invalid_response_reply=(
                         "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
                         "질문해 주세요."
                     ),
+=======
+                    invalid_response_reply=recovery_reply,
+>>>>>>> Stashed changes
                     expects_proactive_feedback=command.is_proactive_answer,
                 )
             except LLMError:
                 answer = TutorAnswer(
+<<<<<<< Updated upstream
                     reply=(
                         "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
                         "질문해 주세요."
                     ),
+=======
+                    reply=recovery_reply,
+>>>>>>> Stashed changes
                     suggested_questions=(),
                     provider=fallback_provider,
                     model=getattr(self.fallback_client, "model", ""),
@@ -377,6 +461,9 @@ class TutorService:
             # 모델이 이전 대화의 짧은 "예" 등을 현재 답으로 잘못 읽어도, 현재
             # 자막 번역에 명시된 답은 안정적으로 정답 처리한다.
             answer = _apply_caption_answer_check(answer, context)
+            # "모르겠어"·힌트 요청은 답안이 아니므로, 모델의 과도한 정답 판정보다
+            # 우선해 정답을 직접 알려주지 않는 힌트 모드로 돌린다.
+            answer = _apply_hint_request_check(answer, context)
 
         return TutorResult(
             # 클라이언트가 기존 대화를 전달하면 같은 ID를 유지하고, 첫 질문이면

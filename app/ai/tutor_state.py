@@ -406,6 +406,14 @@ class InMemoryTutorState:
             if previous_timestamp is None:
                 previous_timestamp = last_question_at
 
+            # 영상 시작 직후 질문이 학습 흐름을 끊지 않게 첫 노출에도 동일한 대기
+            # 시간을 적용한다. 재생 위치는 영상 시작(0초)을 기준으로 전달된다.
+            if (
+                previous_timestamp is None
+                and timestamp < self.proactive_cooldown_seconds
+            ):
+                return _hidden_proactive_decision("initial_cooldown")
+
             if (
                 previous_timestamp is not None
                 and timestamp - previous_timestamp < self.proactive_cooldown_seconds

@@ -19,7 +19,11 @@ from app.ai.llm_client import (
 )
 from app.ai.prompts import build_tutor_prompt
 from app.ai.provider_router import ProviderQuota, ProviderRouter
-from app.api.v1.tutor import get_llm_usage_repository, get_tutor_state
+from app.api.v1.tutor import (
+    _format_proactive_feedback_reply,
+    get_llm_usage_repository,
+    get_tutor_state,
+)
 from app.ai.tutor_service import (
     TutorAnswer,
     TutorAskCommand,
@@ -110,6 +114,21 @@ def test_prompt_marks_subtitles_as_reference_data():
     assert "suggested_questions는 항상 빈 배열" in prompt.system_instruction
 
 
+def test_prompt_allows_general_explanation_when_expression_is_not_in_subtitles():
+    """자막 밖 표현도 영상 문맥을 지어내지 않는 범위에서 설명하도록 요청한다."""
+
+    context = build_tutor_context(
+        video_id="video-1",
+        timestamp=20,
+        user_message="evaluate는 무슨 뜻인가요?",
+        subtitles=[SubtitleLine(20, "Be honest with yourself.", "자신에게 솔직해.")],
+    )
+    prompt = build_tutor_prompt(context, infer_learner_profile(LearnerSignals()))
+
+    assert "자막에 없어도 일반적인 뜻과 쓰임을" in prompt.system_instruction
+    assert "영상 속 장면·화자·의도를 추측하거나 지어내지 마세요." in prompt.system_instruction
+
+
 def test_proactive_answer_prompt_requests_structured_grading():
     """선제 질문 답안에는 정답 기준을 반환하도록 provider에 지시한다."""
 
@@ -154,6 +173,49 @@ def test_incomplete_model_json_recovers_the_completed_reply_and_grading():
     assert "evaluate의 뜻은" in parsed.proactive_feedback.criteria
 
 
+def test_model_response_accepts_common_answer_aliases():
+    """provider가 reply 대신 answer 키를 보내도 답변을 이어서 표시한다."""
+
+    fallback = TutorAnswer(reply="복구 답변", suggested_questions=(), provider="gemini")
+    parsed = _parse_model_response(
+        '{"answer":"힌트: 문장 속 앞뒤 단어를 살펴보세요."}',
+        fallback,
+    )
+
+    assert parsed.reply == "힌트: 문장 속 앞뒤 단어를 살펴보세요."
+
+
+def test_unparseable_primary_response_uses_proactive_hint_fallback():
+    """형식이 깨진 provider 응답도 선제 학습 흐름을 끊지 않는다."""
+
+    class MalformedClient:
+        name = "gemini"
+        model = "test-model"
+
+        async def generate(self, prompt):
+            return '{"reply": null, "proactive_feedback": {}}'
+
+    import asyncio
+
+    result = asyncio.run(
+        TutorService(MalformedClient()).ask(
+            TutorAskCommand(
+                video_id="video-1",
+                timestamp=20,
+                user_message="잘 모르겠어. 힌트 줘.",
+                subtitles=(SubtitleLine(20, "Ingenuity solves problems.", "창의성이 문제를 해결한다."),),
+                focus_word="ingenuity",
+                is_proactive_answer=True,
+            )
+        )
+    )
+
+    assert "모델 응답을 해석하지 못했습니다" not in result.answer.reply
+    assert "ingenuity" in result.answer.reply
+    assert result.answer.proactive_feedback is not None
+    assert "힌트:" in result.answer.proactive_feedback.criteria
+
+
 def test_korean_caption_match_overrides_an_incorrect_model_grade():
     """자막 번역과 일치한 답은 모델이 오판해도 정답으로 처리한다."""
 
@@ -193,6 +255,59 @@ def test_korean_caption_match_overrides_an_incorrect_model_grade():
     assert "평가" in result.answer.proactive_feedback.criteria
 
 
+def test_hint_request_is_never_marked_correct_by_an_overconfident_model():
+    """'모르겠어'는 모델이 정답으로 오판해도 힌트 요청으로 유지한다."""
+
+    class OverconfidentClient:
+        name = "gemini"
+        model = "test-model"
+
+        async def generate(self, prompt):
+            return (
+                '{"reply":"맞아요, 정답이에요!","suggested_questions":[],"proactive_feedback":'
+                '{"result":"correct","criteria":"optimistic은 긍정적이라는 뜻입니다."}}'
+            )
+
+    import asyncio
+
+    result = asyncio.run(
+        TutorService(OverconfidentClient()).ask(
+            TutorAskCommand(
+                video_id="video-1",
+                timestamp=20,
+                user_message="모르겠어",
+                subtitles=(SubtitleLine(20, "She stays optimistic.", "그녀는 낙관적인 태도를 유지한다."),),
+                focus_word="optimistic",
+                is_proactive_answer=True,
+            )
+        )
+    )
+
+    assert result.answer.proactive_feedback is not None
+    assert result.answer.proactive_feedback.result == "unavailable"
+    assert "힌트:" in result.answer.reply
+    assert "맞아요, 정답이에요!" not in result.answer.reply
+
+
+@pytest.mark.parametrize(
+    ("result", "opening"),
+    [
+        ("correct", "맞아요, 정답이에요!"),
+        ("partial", "거의 맞았어요!"),
+        ("incorrect", "좋은 시도예요."),
+        ("unavailable", "좋은 시도예요!"),
+    ],
+)
+def test_proactive_feedback_reply_uses_supportive_tone(result, opening):
+    """선제 질문의 모든 판정 결과가 학습자를 격려하는 말투인지 확인한다."""
+
+    reply = _format_proactive_feedback_reply(result, "자막 문맥을 함께 확인해 봐요.")
+
+    assert reply.startswith(opening)
+    assert "판정:" not in reply
+    assert "정답 기준:" not in reply
+
+
 def test_tutor_api_works_without_gemini_key():
     response = client.post(
         "/api/v1/tutor/ask",
@@ -224,6 +339,24 @@ def test_tutor_api_works_without_gemini_key():
     assert "honest" in body["reply"]
     assert body["message_id"].startswith("msg_")
     assert "reply_tokens" not in body
+
+
+def test_tutor_api_answers_without_subtitle_context():
+    """자막을 보내지 않아도 일반적인 표현 질문을 거절하지 않는다."""
+
+    response = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "no-subtitle-video",
+            "timestamp": 0,
+            "user_message": "evaluate는 무슨 뜻인가요?",
+            "focus_word": "evaluate",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "evaluate에 대해 도와드릴게요." in response.json()["reply"]
+    assert "자막 문장과 함께 질문해" not in response.json()["reply"]
 
 
 def test_tutor_conversation_id_reuses_in_memory_history():
@@ -360,7 +493,7 @@ def test_tutor_settings_api_is_not_exposed():
 
 
 def test_proactive_question_applies_cooldown_and_seen_word_guard():
-    """선제 질문이 새 표현에만 노출되고 짧은 간격의 반복을 차단하는지 확인한다."""
+    """첫 질문과 이후 질문 모두 대기 시간을 적용하는지 확인한다."""
 
     payload = {
         "video_id": "proactive-video",
@@ -372,17 +505,17 @@ def test_proactive_question_applies_cooldown_and_seen_word_guard():
     first = client.post("/api/v1/tutor/proactive", json=payload)
     second = client.post(
         "/api/v1/tutor/proactive",
-        json={**payload, "timestamp": 20},
+        json={**payload, "timestamp": 180},
     )
     third = client.post(
         "/api/v1/tutor/proactive",
         json={**payload, "timestamp": 200},
     )
 
-    assert first.json()["should_show"] is True
-    assert first.json()["focus_word"] == "honest with"
-    assert second.json()["reason"] == "cooldown"
-    assert third.json()["reason"] == "already_seen"
+    assert first.json()["reason"] == "initial_cooldown"
+    assert second.json()["should_show"] is True
+    assert second.json()["focus_word"] == "honest with"
+    assert third.json()["reason"] == "cooldown"
 
 
 def test_explicit_proactive_question_id_returns_natural_feedback():
@@ -392,9 +525,9 @@ def test_explicit_proactive_question_id_returns_natural_feedback():
         "/api/v1/tutor/proactive",
         json={
             "video_id": "answer-video",
-            "timestamp": 10,
+            "timestamp": 180,
             "recent_subtitles": [
-                {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
+                {"time": 180, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
             ],
         },
     )
@@ -403,11 +536,16 @@ def test_explicit_proactive_question_id_returns_natural_feedback():
         "/api/v1/tutor/ask",
         json={
             "video_id": "answer-video",
+<<<<<<< Updated upstream
             "timestamp": 10,
             "proactive_question_id": question_id,
             "user_message": "자신에게 솔직해라는 뜻이에요.",
+=======
+            "timestamp": 180,
+            "user_message": "솔직하게 말한다는 뜻이에요.",
+>>>>>>> Stashed changes
             "recent_subtitles": [
-                {"time": 10, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
+                {"time": 180, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
             ],
         },
     )
@@ -417,17 +555,25 @@ def test_explicit_proactive_question_id_returns_natural_feedback():
     assert response.status_code == 200
     feedback = response.json()["proactive_feedback"]
     assert feedback is not None
+<<<<<<< Updated upstream
     assert feedback["result"] == "correct"
     assert "판정:" not in response.json()["reply"]
     assert "판정 불가" not in response.json()["reply"]
     assert "정답 기준:" not in response.json()["reply"]
+=======
+    assert feedback["result"] == "unavailable"
+    assert "힌트:" in feedback["criteria"]
+    assert "stub provider" not in response.json()["reply"]
+    assert "좋은 시도예요!" in response.json()["reply"]
+    assert "판정:" not in response.json()["reply"]
+>>>>>>> Stashed changes
     assert "honest with" in response.json()["reply"]
 
     later_question = client.post(
         "/api/v1/tutor/ask",
         json={
             "video_id": "answer-video",
-            "timestamp": 11,
+            "timestamp": 181,
             "user_message": "다른 질문이에요.",
         },
     )

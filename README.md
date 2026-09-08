@@ -80,6 +80,7 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 `429` 응답 또는 로컬 quota 도달 시 다음 provider로 전환합니다. 세부 동작은
 `app/ai/`의 docstring과 `tests/test_tutor.py`에서 확인합니다.
 
+<<<<<<< Updated upstream
 선제 질문은 기본적으로 영상 시점 기준 180초 간격이며, 영상당 3회까지만 표시합니다.
 `/api/v1/tutor/proactive`가 반환한 `question_id`를 답변 요청의
 `proactive_question_id`로 보내야 해당 요청이 선제 질문 답변으로 처리됩니다.
@@ -90,6 +91,17 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 `proactive_feedback`에는 `correct`(정답), `partial`(부분 정답),
 `incorrect`(오답)과 그 기준이 선택적으로 포함됩니다. 외부 provider가 unavailable한
 경우에는 기계적인 `판정 불가`를 노출하지 않고 자막 문맥 안내만 반환합니다.
+=======
+선제 질문은 기본적으로 영상 시작 후 180초부터 표시하며, 이후에도 영상 시점 기준
+180초 간격을 유지하고 영상당 3회까지만 표시합니다.
+`/api/v1/tutor/proactive`가 반환한 `focus_word`에 답하는 요청은
+`/api/v1/tutor/ask`의 같은 이름 필드에 그대로 넣어야 Tutor가 다른 표현으로
+설명 범위를 넓히지 않습니다. 선제 질문에 답할 때는 `question_id`를
+`proactive_question_id`로 보내면 서버가 원래 `focus_word`를 복원하고,
+응답의 `proactive_feedback`에서 `correct`(정답), `partial`(부분 정답),
+`incorrect`(오답)와 그 판단 기준을 받을 수 있습니다. `LLM_PROVIDER=stub`에서는
+의미 판정이 불가능하므로 `unavailable`을 반환합니다.
+>>>>>>> Stashed changes
 
 ## 문서
 

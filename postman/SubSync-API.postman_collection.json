@@ -51,8 +51,13 @@
         },
         {
           "name":"4. Tutor 선제 질문 확인",
+<<<<<<< Updated upstream
           "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ],\n  \"playback_state\": \"playing\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/proactive","description":"재생 중 Tutor가 먼저 제안할 질문이 있는지 확인합니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 판단 결과를 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('should_show');","  if (body.should_show) {","    pm.collectionVariables.set('proactive_question_id', body.question_id);","  }","});"]}}],
+=======
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 180.1,\n  \"recent_subtitles\": [\n    {\n      \"time\": 180.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ],\n  \"playback_state\": \"playing\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/proactive","description":"재생 중 Tutor가 먼저 제안할 질문이 있는지 확인합니다. 기본 설정에서는 영상 시작 후 180초부터 질문을 제안합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 판단 결과를 받는다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json()).to.have.property('should_show');","});"]}}],
+>>>>>>> Stashed changes
           "response":[]
         },
         {
