@@ -64,7 +64,6 @@ def build_tutor_prompt(context: TutorContext, profile: LearnerProfile) -> TutorP
     proactive_rule = (
         "\n선제 질문 답안 피드백:\n"
         "사용자는 Tutor가 먼저 낸 집중 표현의 뜻을 추측해 답했습니다. 자막 속 쓰임과 "
-<<<<<<< Updated upstream
         "비교해 proactive_feedback.result를 correct, partial, incorrect 중 하나로 정하세요.\n"
         "- correct: 핵심 의미와 자막 속 쓰임이 맞습니다.\n"
         "- partial: 핵심 방향은 맞지만 의미 또는 쓰임 일부가 빠졌거나 부정확합니다.\n"
@@ -74,16 +73,7 @@ def build_tutor_prompt(context: TutorContext, profile: LearnerProfile) -> TutorP
         "'정답 기준', provider 이름 또는 JSON 필드명을 쓰지 마세요.\n"
         "proactive_feedback.criteria에는 사용자의 답과 자막 속 의미를 비교한 근거만 한 문장으로 "
         "80자 이내에 쓰세요.\n"
-=======
-        "비교해 correct, partial, incorrect, unavailable 중 하나로 판정하세요.\n"
-        "- correct: 핵심 의미와 자막 속 쓰임이 맞습니다.\n"
-        "- partial: 핵심 방향은 맞지만 의미 또는 쓰임 일부가 빠졌거나 부정확합니다.\n"
-        "- incorrect: 자막 속 표현의 의미와 맞지 않습니다.\n"
-        "- unavailable: 사용자가 '모르겠다'고 하거나 힌트를 요청해 답안을 제시하지 않은 경우입니다. "
-        "이 경우 correct로 판정하지 말고, 뜻을 직접 말하지 않는 짧은 힌트를 주세요.\n"
-        "reply는 판정 결과만 60자 이내로 쓰고, proactive_feedback.criteria는 학습자를 "
-        "격려하는 부드러운 말투로 이유를 80자 이내 한 문장으로 쓰세요.\n"
->>>>>>> Stashed changes
+
         if context.is_proactive_answer
         else ""
     )

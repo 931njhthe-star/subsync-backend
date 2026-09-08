@@ -418,14 +418,12 @@ class TutorService:
             answer = await _generate_answer(
                 self.llm_client,
                 prompt,
-<<<<<<< Updated upstream
+
                 invalid_response_reply=(
                     "답변을 정리하는 중에 문제가 있었어요. 자막 속 어떤 표현이 "
                     "궁금한지 다시 알려 주세요."
                 ),
-=======
-                invalid_response_reply=recovery_reply,
->>>>>>> Stashed changes
+
                 expects_proactive_feedback=command.is_proactive_answer,
             )
         except LLMError:
@@ -436,26 +434,19 @@ class TutorService:
                 answer = await _generate_answer(
                     self.fallback_client,
                     prompt,
-<<<<<<< Updated upstream
                     invalid_response_reply=(
                         "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
                         "질문해 주세요."
                     ),
-=======
-                    invalid_response_reply=recovery_reply,
->>>>>>> Stashed changes
                     expects_proactive_feedback=command.is_proactive_answer,
                 )
             except LLMError:
                 answer = TutorAnswer(
-<<<<<<< Updated upstream
                     reply=(
                         "지금은 자막 문맥을 제대로 불러오지 못했어요. 잠시 후 다시 "
                         "질문해 주세요."
                     ),
-=======
-                    reply=recovery_reply,
->>>>>>> Stashed changes
+
                     suggested_questions=(),
                     provider=fallback_provider,
                     model=getattr(self.fallback_client, "model", ""),

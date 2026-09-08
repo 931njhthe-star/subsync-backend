@@ -321,14 +321,6 @@ async def ask_tutor(
 
     proactive_feedback = result.answer.proactive_feedback
     reply = result.answer.reply
-<<<<<<< Updated upstream
-=======
-    if proactive_feedback:
-        reply = _format_proactive_feedback_reply(
-            proactive_feedback.result,
-            proactive_feedback.criteria,
-        )
->>>>>>> Stashed changes
 
     return TutorAskResponse(
         conversation_id=result.conversation_id,

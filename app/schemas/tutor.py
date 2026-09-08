@@ -136,13 +136,9 @@ class TutorUsageSummaryResponse(BaseModel):
 class ProactiveAnswerFeedbackResponse(BaseModel):
     """선제 질문 답에 대한 피드백과 사용자가 확인할 기준."""
 
-<<<<<<< Updated upstream
     result: Literal["correct", "partial", "incorrect"] = Field(
         description="정답, 부분 정답 또는 오답",
-=======
-    result: Literal["correct", "partial", "incorrect", "unavailable"] = Field(
-        description="정답, 부분 정답, 오답 또는 자동 판정 불가",
->>>>>>> Stashed changes
+
     )
     criteria: str = Field(description="사용자 답변과 자막 의미를 비교한 근거")
 

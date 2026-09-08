@@ -160,8 +160,7 @@ class RuleBasedTutorClient:
             "reply": reply,
             "suggested_questions": [],
         }
-<<<<<<< Updated upstream
-=======
+
         if prompt.context.is_proactive_answer:
             hint = (
                 f"'{focus_word or '이 표현'}'가 들어간 문장을 다시 보고, 앞뒤 단어가 "
@@ -173,7 +172,6 @@ class RuleBasedTutorClient:
                     f"힌트: {hint}"
                 ),
             }
->>>>>>> Stashed changes
         return json.dumps(response, ensure_ascii=False)
 
 
