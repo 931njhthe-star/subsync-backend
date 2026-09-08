@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import logging
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -39,6 +40,22 @@ logger = logging.getLogger(__name__)
 # Supabase Auth dependency가 연결되기 전까지 로컬에서 사용할 개발용 actor다.
 # 운영 환경에서는 이 값을 사용하지 않고 검증된 JWT의 sub로 교체해야 한다.
 _DEVELOPMENT_ACTOR_ID = "test"
+_QUESTION_INTENT_RE = re.compile(
+    r"[?？]|무슨|뭐|어떤|왜|어떻게|언제|어디|누구|뜻|의미|설명|알려\s*줘|what|why|how|meaning",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_proactive_answer(message: str) -> bool:
+    """짧은 답안형 입력만 선제 질문에 자동 연결할지 판단한다.
+
+    최신 Extension은 ``proactive_question_id``를 명시하지만, 이전 버전이 이를
+    누락해도 단어·짧은 구처럼 답안으로 보이는 입력은 학습 흐름을 유지한다.
+    질문 표현은 오인하지 않도록 항상 일반 Tutor 대화로 남긴다.
+    """
+
+    value = message.strip()
+    return bool(value) and len(value) <= 80 and not _QUESTION_INTENT_RE.search(value)
 
 
 def _format_proactive_feedback_reply(result: str, criteria: str) -> str:
@@ -199,9 +216,6 @@ async def ask_tutor(
     focus_word = request.focus_word
     is_proactive_answer = False
     proactive_question_id = request.proactive_question_id
-    # 선제 질문 ID가 명시된 요청만 퀴즈 답변으로 처리한다. pending 질문을
-    # 추측해 일반 질문까지 채점 모드로 바꾸면 사용자가 갑자기 판정 화면을
-    # 보게 되므로, 애매한 요청은 항상 일반 대화로 남긴다.
     if request.proactive_question_id:
         focus_word = state.get_proactive_focus_word(
             _DEVELOPMENT_ACTOR_ID,
@@ -214,6 +228,17 @@ async def ask_tutor(
                 detail="답변할 Tutor 선제 질문을 찾을 수 없습니다.",
             )
         is_proactive_answer = True
+    elif _looks_like_proactive_answer(request.user_message):
+        # 구형 Extension이 ID를 보내지 않아도 짧은 답안은 최근 선제 질문에 연결한다.
+        # '무엇인가요?' 같은 질문형 입력은 위 helper에서 제외되어 일반 질문이 된다.
+        pending_question = state.find_pending_proactive_question(
+            _DEVELOPMENT_ACTOR_ID,
+            request.video_id,
+            allow_unmatched=True,
+        )
+        if pending_question is not None:
+            proactive_question_id, focus_word = pending_question
+            is_proactive_answer = True
 
     stored_history = None
     stored_subtitles: tuple[SubtitleLine, ...] = ()

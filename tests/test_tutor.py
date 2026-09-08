@@ -536,14 +536,9 @@ def test_explicit_proactive_question_id_returns_natural_feedback():
         "/api/v1/tutor/ask",
         json={
             "video_id": "answer-video",
-<<<<<<< Updated upstream
-            "timestamp": 10,
+            "timestamp": 180,
             "proactive_question_id": question_id,
             "user_message": "자신에게 솔직해라는 뜻이에요.",
-=======
-            "timestamp": 180,
-            "user_message": "솔직하게 말한다는 뜻이에요.",
->>>>>>> Stashed changes
             "recent_subtitles": [
                 {"time": 180, "en": "Be honest with yourself.", "ko": "너 자신에게 솔직해."}
             ],
@@ -555,18 +550,10 @@ def test_explicit_proactive_question_id_returns_natural_feedback():
     assert response.status_code == 200
     feedback = response.json()["proactive_feedback"]
     assert feedback is not None
-<<<<<<< Updated upstream
     assert feedback["result"] == "correct"
     assert "판정:" not in response.json()["reply"]
     assert "판정 불가" not in response.json()["reply"]
     assert "정답 기준:" not in response.json()["reply"]
-=======
-    assert feedback["result"] == "unavailable"
-    assert "힌트:" in feedback["criteria"]
-    assert "stub provider" not in response.json()["reply"]
-    assert "좋은 시도예요!" in response.json()["reply"]
-    assert "판정:" not in response.json()["reply"]
->>>>>>> Stashed changes
     assert "honest with" in response.json()["reply"]
 
     later_question = client.post(
@@ -610,6 +597,45 @@ def test_general_question_does_not_consume_pending_proactive_question():
     assert response.status_code == 200
     assert response.json()["proactive_feedback"] is None
     assert "판정:" not in response.json()["reply"]
+
+
+def test_short_answer_auto_connects_to_a_pending_proactive_question():
+    """ID가 누락된 구형 Extension의 짧은 답안도 최근 퀴즈로 채점한다."""
+
+    proactive = client.post(
+        "/api/v1/tutor/proactive",
+        json={
+            "video_id": "short-answer-video",
+            "timestamp": 180,
+            "recent_subtitles": [
+                {
+                    "time": 180,
+                    "en": "Actually, it works.",
+                    "ko": "실제로 작동합니다.",
+                }
+            ],
+        },
+    )
+    response = client.post(
+        "/api/v1/tutor/ask",
+        json={
+            "video_id": "short-answer-video",
+            "timestamp": 181,
+            "user_message": "실제로",
+            "recent_subtitles": [
+                {
+                    "time": 180,
+                    "en": "Actually, it works.",
+                    "ko": "실제로 작동합니다.",
+                }
+            ],
+        },
+    )
+
+    assert proactive.status_code == 200
+    assert proactive.json()["should_show"] is True
+    assert response.status_code == 200
+    assert response.json()["proactive_feedback"]["result"] == "correct"
 
 
 def test_proactive_question_expires_after_thirty_seconds():

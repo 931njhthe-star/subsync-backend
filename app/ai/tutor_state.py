@@ -468,16 +468,16 @@ class InMemoryTutorState:
         video_id: str,
         *,
         focus_word: str | None = None,
+        allow_unmatched: bool = False,
     ) -> tuple[str, str] | None:
         """아직 답하지 않은 최근 선제 질문을 반환한다.
 
-        호환용으로 남겨 둔 조회 함수지만, ``focus_word``가 명시된 경우에만
-        일치하는 질문을 반환한다. 표현이 없는 일반 질문을 선제 답변으로
-        자동 연결하면 사용자가 의도하지 않은 채점 화면을 보게 되기 때문이다.
-        만료된 질문도 반환하지 않는다.
+        기본적으로 ``focus_word``가 명시된 경우에만 일치하는 질문을 반환한다.
+        ``allow_unmatched``는 호출부가 입력을 답안형으로 이미 판별했을 때만 최근
+        질문을 찾는 좁은 호환 경로다. 만료된 질문은 반환하지 않는다.
         """
 
-        if focus_word is None:
+        if focus_word is None and not allow_unmatched:
             return None
 
         with self._lock:
@@ -490,7 +490,7 @@ class InMemoryTutorState:
                     continue
                 if not self._is_proactive_question_active(state, question_id):
                     continue
-                if stored_focus_word.casefold() == focus_word.casefold():
+                if focus_word is None or stored_focus_word.casefold() == focus_word.casefold():
                     return question_id, stored_focus_word
             return None
 
