@@ -14,6 +14,8 @@
     {"key":"proactive_question_id","value":"","type":"string"},
     {"key":"dev_user_id","value":"00000000-0000-0000-0000-000000000000","type":"string"},
     {"key":"saved_word_id","value":"","type":"string"}
+    {"key":"dashboard_days","value":"7","type":"string"}
+
   ],
   "item": [
     {
@@ -53,13 +55,13 @@
         {
           "name":"4. Tutor 선제 질문 확인",
           "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ],\n  \"playback_state\": \"playing\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/proactive","description":"재생 중 Tutor가 먼저 제안할 질문이 있는지 확인합니다."},
-          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 판단 결과를 받는다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json()).to.have.property('should_show');","});"]}}],
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 판단 결과를 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('should_show');","  if (body.should_show) {","    pm.collectionVariables.set('proactive_question_id', body.question_id);","  }","});"]}}],
           "response":[]
         },
         {
-          "name":"5. 선제 질문 답안 판정",
-          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"proactive_question_id\": \"{{proactive_question_id}}\",\n  \"user_message\": \"잘 모르겠어요.\",\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ]\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/ask","description":"4번 응답의 question_id를 proactive_question_id 변수에 넣은 뒤 실행합니다. 응답의 proactive_feedback에 정답·부분 정답·오답과 판단 기준이 반환됩니다."},
-          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 답안 판정을 받는다', function () {","  pm.response.to.have.status(200);","  const feedback = pm.response.json().proactive_feedback;","  pm.expect(feedback).to.not.equal(null);","  pm.expect(['correct', 'partial', 'incorrect', 'unavailable']).to.include(feedback.result);","  pm.expect(feedback.criteria).to.be.a('string').and.not.empty;","});"]}}],
+          "name":"5. 선제 질문 답안 피드백",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"proactive_question_id\": \"{{proactive_question_id}}\",\n  \"user_message\": \"영어 철자는 일관성이 없다는 뜻이라고 생각해요.\",\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ]\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/ask","description":"4번 응답의 question_id를 proactive_question_id 변수에 넣어 명시적으로 답변 모드로 호출합니다. reply는 자연스러운 피드백이고 proactive_feedback에는 선택적인 정답 근거가 포함됩니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 답안 피드백을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.reply).to.be.a('string').and.not.empty;","  pm.expect(body.reply).to.not.include('판정:');","  pm.expect(body.reply).to.not.include('판정 불가');","  const feedback = body.proactive_feedback;","  if (feedback !== null) {","    pm.expect(['correct', 'partial', 'incorrect']).to.include(feedback.result);","    pm.expect(feedback.criteria).to.be.a('string').and.not.empty;","  }","});"]}}],
           "response":[]
         },
         {
@@ -97,6 +99,54 @@
           "request":{"method":"DELETE","header":[{"key":"X-Dev-User-ID","value":"{{dev_user_id}}"}],"url":"{{base_url}}/api/v1/words/{{saved_word_id}}","description":"저장 단어 ID를 기준으로 개발 사용자의 단어를 삭제합니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('저장 단어가 삭제된다', function () {","  pm.response.to.have.status(204);","});"]}}],
           "response":[]
+
+      "name": "Dashboard — 운영 지표 조회",
+      "description": "Streamlit Dashboard에서 사용할 llm_usage·api_logs 집계 API입니다. Supabase가 설정되지 않은 로컬 환경에서는 빈 집계가 반환됩니다.",
+      "item": [
+        {
+          "name": "7. Dashboard Home 요약",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10",
+            "description": "두 테이블의 KPI, 일별 AI 사용량, 최근 API 활동을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Dashboard Home 요약을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('tracked_user_count');","  pm.expect(body).to.have.property('daily_ai_usage');","  pm.expect(body.recent_activity).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "8. AI 사용량 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days={{dashboard_days}}",
+            "description": "llm_usage의 토큰 합계, provider/model별 사용량, 일별 사용량을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('AI 사용량을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('total_tokens');","  pm.expect(body.providers).to.be.an('array');","  pm.expect(body.daily_usage).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "9. API 호출 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/api-calls?days={{dashboard_days}}&recent_limit=10",
+            "description": "api_logs의 endpoint별 호출량, 성공률, latency, 최근 상태 코드를 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('API 호출 현황을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('success_rate');","  pm.expect(body.endpoints).to.be.an('array');","  pm.expect(body.recent_calls).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "10. Dashboard 잘못된 기간 입력",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days=0",
+            "description": "지원 범위(1~90일)를 벗어난 기간은 422로 거부합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('잘못된 기간을 거부한다', function () {","  pm.response.to.have.status(422);","});"]}}],
+          "response": []
+
         }
       ]
     }

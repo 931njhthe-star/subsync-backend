@@ -12,7 +12,7 @@ docs/
 └── database/
     ├── README.md                         # SQL 정본, 실행 순서, 정합성 점검 결과
     ├── 1. users.sql ... 6. api_logs.sql
-    └── db_schema.sql                     # 1~8번 SQL을 합친 참조용 스키마
+    └── db_schema.sql                     # 1~6번 SQL을 합친 참조용 스키마
 ```
 
 ## 권장 읽는 순서
@@ -26,6 +26,8 @@ docs/
 
 - API 계약이 바뀌면 Pydantic DTO, Postman Collection, 테스트를 함께 갱신하고
   `/openapi.json`에 의도한 경로·스키마가 노출되는지 확인한다.
+- Streamlit Dashboard API는 `app/api/v1/dashboard.py`와
+  `app/services/dashboard.py`에서 `llm_usage`·`api_logs` 조회 및 집계를 담당한다.
 - Tutor 동작·provider·사용량 제한이 바뀌면 코드 docstring, `.env.example`, 테스트를 함께 갱신한다.
 - 이미 실행한 DB 기준 SQL은 수정하지 않는다. 변경은 새 migration으로 추가하고,
   적용 후 `db_schema.sql`과 `database/README.md`를 갱신한다.

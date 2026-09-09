@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import logging
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -39,6 +40,38 @@ logger = logging.getLogger(__name__)
 # Supabase Auth dependency가 연결되기 전까지 로컬에서 사용할 개발용 actor다.
 # 운영 환경에서는 이 값을 사용하지 않고 검증된 JWT의 sub로 교체해야 한다.
 _DEVELOPMENT_ACTOR_ID = "test"
+_QUESTION_INTENT_RE = re.compile(
+    r"[?？]|무슨|뭐|어떤|왜|어떻게|언제|어디|누구|뜻|의미|설명|알려\s*줘|what|why|how|meaning",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_proactive_answer(message: str) -> bool:
+    """짧은 답안형 입력만 선제 질문에 자동 연결할지 판단한다.
+
+    최신 Extension은 ``proactive_question_id``를 명시하지만, 이전 버전이 이를
+    누락해도 단어·짧은 구처럼 답안으로 보이는 입력은 학습 흐름을 유지한다.
+    질문 표현은 오인하지 않도록 항상 일반 Tutor 대화로 남긴다.
+    """
+
+    value = message.strip()
+    return bool(value) and len(value) <= 80 and not _QUESTION_INTENT_RE.search(value)
+
+
+def _format_proactive_feedback_reply(result: str, criteria: str) -> str:
+    """선제 질문의 채점 결과를 학습자를 격려하는 자연스러운 문장으로 만든다.
+
+    API의 ``result``와 ``criteria`` 값은 대시보드·클라이언트가 그대로 사용할 수 있게
+    유지하고, 사용자에게 보이는 ``reply``만 딱딱한 판정표 형식 대신 대화체로 바꾼다.
+    """
+
+    introductions = {
+        "correct": "맞아요, 정답이에요!",
+        "partial": "거의 맞았어요!",
+        "incorrect": "좋은 시도예요. 이 부분은 조금만 더 살펴볼까요?",
+        "unavailable": "좋은 시도예요!",
+    }
+    return f"{introductions.get(result, '답변을 확인했어요.')} {criteria}"
 
 
 @lru_cache(maxsize=1)
@@ -167,7 +200,10 @@ async def ask_tutor(
     Note:
         인증/DB 계층이 아직 연결되지 않아 현재는 요청에 포함된
         ``learner_signals``를 그대로 사용한다. 운영 단계에서는 인증된 사용자 ID로
-        서버가 학습 신호를 조회해야 한다.
+        서버가 학습 신호를 조회해야 한다. 선제 질문 답변은 요청의
+        ``proactive_question_id``가 실제로 전달된 경우에만 피드백 모드로 처리하며,
+        일반 질문은 자연스러운 Tutor 대화로 유지한다. 같은 대화의 후속 요청에
+        자막이 생략되면 마지막으로 저장한 자막 문맥을 재사용한다.
     """
 
     if not state.allow_request(_DEVELOPMENT_ACTOR_ID):
@@ -192,17 +228,20 @@ async def ask_tutor(
                 detail="답변할 Tutor 선제 질문을 찾을 수 없습니다.",
             )
         is_proactive_answer = True
-    else:
+    elif _looks_like_proactive_answer(request.user_message):
+        # 구형 Extension이 ID를 보내지 않아도 짧은 답안은 최근 선제 질문에 연결한다.
+        # '무엇인가요?' 같은 질문형 입력은 위 helper에서 제외되어 일반 질문이 된다.
         pending_question = state.find_pending_proactive_question(
             _DEVELOPMENT_ACTOR_ID,
             request.video_id,
-            focus_word=focus_word,
+            allow_unmatched=True,
         )
         if pending_question is not None:
             proactive_question_id, focus_word = pending_question
             is_proactive_answer = True
 
     stored_history = None
+    stored_subtitles: tuple[SubtitleLine, ...] = ()
     if request.conversation_id:
         conversation = state.get_conversation(
             _DEVELOPMENT_ACTOR_ID,
@@ -219,6 +258,13 @@ async def ask_tutor(
                 status_code=409,
                 detail="Tutor 대화와 영상 ID가 일치하지 않습니다.",
             )
+        stored_subtitles = (
+            state.get_conversation_subtitles(
+                _DEVELOPMENT_ACTOR_ID,
+                request.conversation_id,
+            )
+            or ()
+        )
     # 저장된 대화가 있으면 서버 이력을 우선한다. 아직 저장된 대화가 없는 최초
     # 요청만 클라이언트가 보낸 history를 사용해 대화를 초기화한다.
     conversation_history = (
@@ -233,6 +279,14 @@ async def ask_tutor(
     # 저장 단어 배열과 별도로 전달된 count 중 큰 값을 사용해 부분 데이터도 보정한다.
     saved_words = tuple(item.word for item in signals.saved_words)
     saved_word_count = max(signals.saved_word_count or 0, len(saved_words))
+    subtitles = tuple(
+        SubtitleLine(timestamp=line.time, english=line.en, korean=line.ko)
+        for line in request.recent_subtitles
+    )
+    if not subtitles and stored_subtitles:
+        # 같은 대화의 후속 질문이 자막을 생략해도 마지막으로 확인한 문장을
+        # 재사용한다. 새로운 자막이 오면 위의 요청 문맥이 항상 우선한다.
+        subtitles = stored_subtitles
 
     # HTTP 경계의 Pydantic DTO를 AI 계층이 사용하는 불변 도메인 객체로 변환한다.
     result = await service.ask(
@@ -240,10 +294,7 @@ async def ask_tutor(
             video_id=request.video_id,
             timestamp=request.timestamp,
             user_message=request.user_message,
-            subtitles=tuple(
-                SubtitleLine(timestamp=line.time, english=line.en, korean=line.ko)
-                for line in request.recent_subtitles
-            ),
+            subtitles=subtitles,
             learner_signals=LearnerSignals(
                 saved_word_count=saved_word_count,
                 quiz_attempts=signals.quiz_attempts,
@@ -268,6 +319,7 @@ async def ask_tutor(
         user_message=request.user_message,
         tutor_reply=result.answer.reply,
         initial_history=conversation_history if stored_history is None else (),
+        subtitles=subtitles,
     )
     if is_proactive_answer and proactive_question_id:
         state.mark_proactive_question_answered(
@@ -287,22 +339,13 @@ async def ask_tutor(
             input_tokens=result.answer.usage.input_tokens,
             output_tokens=result.answer.usage.output_tokens,
             total_tokens=result.answer.usage.normalized_total,
+            finish_reason=result.answer.finish_reason,
+            provider_latency=result.answer.provider_latency,
         ),
     )
 
     proactive_feedback = result.answer.proactive_feedback
     reply = result.answer.reply
-    if proactive_feedback:
-        labels = {
-            "correct": "정답",
-            "partial": "부분 정답",
-            "incorrect": "오답",
-            "unavailable": "판정 불가",
-        }
-        reply = (
-            f"판정: {labels[proactive_feedback.result]}\n"
-            f"정답 기준: {proactive_feedback.criteria}"
-        )
 
     return TutorAskResponse(
         conversation_id=result.conversation_id,
@@ -337,8 +380,8 @@ async def get_tutor_usage(
 ) -> TutorUsageSummaryResponse:
     """개발 Supabase에 저장된 전체 토큰 사용량 합계를 반환한다.
 
-    현재 테이블에는 사용자 식별 컬럼이 없으므로 전체 개발 사용량만 조회한다. 인증을
-    연결할 때는 migration으로 JWT ``sub`` 컬럼을 추가하고 자신의 행만 조회해야 한다.
+    현재 Tutor 호출은 인증 전 개발 actor로 저장되어 전체 개발 사용량만 조회한다.
+    사용자별 조회가 필요해지면 JWT ``sub`` 기반 소유권 검사를 추가해야 한다.
     """
 
     try:

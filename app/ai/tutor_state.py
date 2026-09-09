@@ -152,6 +152,7 @@ class _ConversationState:
     video_id: str
     turns: list[ConversationTurn] = field(default_factory=list)
     message_ids: set[str] = field(default_factory=set)
+    last_subtitles: tuple[SubtitleLine, ...] = ()
 
 
 @dataclass
@@ -161,6 +162,7 @@ class _ProactiveState:
     last_question_at: float | None = None
     seen_focus_words: set[str] = field(default_factory=set)
     questions: dict[str, str] = field(default_factory=dict)
+    question_created_at: dict[str, float] = field(default_factory=dict)
     answered_question_ids: set[str] = field(default_factory=set)
 
 
@@ -178,20 +180,29 @@ class InMemoryTutorState:
         *,
         proactive_cooldown_seconds: float = 180.0,
         proactive_max_questions_per_video: int = 3,
+        proactive_question_ttl_seconds: float = 30.0,
         requests_per_minute: int = 30,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """기본 설정, 선제 질문 cooldown, 요청 제한을 초기화한다.
+        """기본 설정, 선제 질문 만료·cooldown, 요청 제한을 초기화한다.
 
         ``clock``을 주입할 수 있게 해 실제 시간을 기다리지 않고 rate limit의
         경계값을 테스트할 수 있다. 운영 환경에서는 이 메모리 제한을 Redis 기반
         제한기로 교체하되, 호출하는 라우터 계약은 유지한다.
+
+        ``proactive_question_ttl_seconds``는 선제 질문을 표시한 뒤 답변으로
+        연결할 수 있는 시간이다. 영상 재생 시점이 아니라 실제 경과 시간을
+        기준으로 만료시켜, 오래된 질문이 일반 대화를 가로채지 않게 한다.
         """
 
         self.proactive_cooldown_seconds = max(proactive_cooldown_seconds, 0.0)
         self.proactive_max_questions_per_video = max(
             proactive_max_questions_per_video,
             0,
+        )
+        self.proactive_question_ttl_seconds = max(
+            proactive_question_ttl_seconds,
+            0.0,
         )
         self.requests_per_minute = max(requests_per_minute, 0)
         self._clock = clock
@@ -240,6 +251,24 @@ class InMemoryTutorState:
                 return None
             return state.video_id, tuple(state.turns[-10:])
 
+    def get_conversation_subtitles(
+        self,
+        actor_id: str,
+        conversation_id: str,
+    ) -> tuple[SubtitleLine, ...] | None:
+        """대화에 마지막으로 전달된 자막 문맥을 반환한다.
+
+        후속 질문이 자막 배열을 생략하더라도 같은 대화에서 마지막으로 확인한
+        문장을 재사용할 수 있게 한다. 새로운 영상 시점의 자막이 있다면 라우터가
+        그 값을 우선 사용하므로 오래된 문맥이 무조건 유지되지는 않는다.
+        """
+
+        with self._lock:
+            state = self._conversations.get((actor_id, conversation_id))
+            if state is None:
+                return None
+            return state.last_subtitles
+
     def record_exchange(
         self,
         *,
@@ -250,12 +279,13 @@ class InMemoryTutorState:
         user_message: str,
         tutor_reply: str,
         initial_history: tuple[ConversationTurn, ...] = (),
+        subtitles: tuple[SubtitleLine, ...] = (),
     ) -> None:
         """Tutor 질문과 답변을 대화에 추가한다.
 
         대화가 처음 생성되는 경우 요청에 포함된 이전 이력을 먼저 저장한다. 이후
-        요청에서는 서버 저장 이력을 우선 사용하므로 프론트엔드가 매번 전체 이력을
-        다시 보내지 않아도 된다.
+        요청에서는 서버 저장 이력과 마지막 자막 문맥을 우선 사용하므로
+        프론트엔드가 매번 전체 이력과 같은 자막을 다시 보내지 않아도 된다.
         """
 
         with self._lock:
@@ -264,6 +294,10 @@ class InMemoryTutorState:
                 key,
                 _ConversationState(video_id=video_id),
             )
+            # 새 자막이 전달된 경우에만 문맥을 교체한다. 후속 질문이 자막을
+            # 생략한 요청으로 마지막으로 유효한 문맥을 지우지 않기 위해서다.
+            if subtitles:
+                state.last_subtitles = tuple(subtitles)
             if not state.turns and initial_history:
                 state.turns.extend(initial_history[-10:])
             state.turns.extend(
@@ -372,6 +406,14 @@ class InMemoryTutorState:
             if previous_timestamp is None:
                 previous_timestamp = last_question_at
 
+            # 영상 시작 직후 질문이 학습 흐름을 끊지 않게 첫 노출에도 동일한 대기
+            # 시간을 적용한다. 재생 위치는 영상 시작(0초)을 기준으로 전달된다.
+            if (
+                previous_timestamp is None
+                and timestamp < self.proactive_cooldown_seconds
+            ):
+                return _hidden_proactive_decision("initial_cooldown")
+
             if (
                 previous_timestamp is not None
                 and timestamp - previous_timestamp < self.proactive_cooldown_seconds
@@ -386,6 +428,7 @@ class InMemoryTutorState:
             state.last_question_at = timestamp
             state.seen_focus_words.add(normalized_focus)
             state.questions[question_id] = focus_word
+            state.question_created_at[question_id] = self._clock()
 
         return ProactiveDecision(
             should_show=True,
@@ -393,7 +436,7 @@ class InMemoryTutorState:
             question_id=question_id,
             question=f"방금 나온 '{focus_word}'의 뜻을 추측해 볼까요?",
             focus_word=focus_word,
-            expires_in_seconds=30,
+            expires_in_seconds=int(self.proactive_question_ttl_seconds),
         )
 
     def get_proactive_focus_word(
@@ -412,7 +455,12 @@ class InMemoryTutorState:
             state = self._proactive.get((actor_id, video_id))
             if state is None:
                 return None
-            return state.questions.get(question_id)
+            focus_word = state.questions.get(question_id)
+            if focus_word is None:
+                return None
+            if not self._is_proactive_question_active(state, question_id):
+                return None
+            return focus_word
 
     def find_pending_proactive_question(
         self,
@@ -420,13 +468,17 @@ class InMemoryTutorState:
         video_id: str,
         *,
         focus_word: str | None = None,
+        allow_unmatched: bool = False,
     ) -> tuple[str, str] | None:
         """아직 답하지 않은 최근 선제 질문을 반환한다.
 
-        이전 Extension은 question_id를 보내지 않으므로, 집중 표현이 일치하면 그
-        질문을 우선 찾고 표현도 없으면 가장 최근 질문을 한 번만 자동 연결한다.
-        답변 처리 후 ID를 소비해 이후의 일반 질문이 오답 채점으로 바뀌지 않게 한다.
+        기본적으로 ``focus_word``가 명시된 경우에만 일치하는 질문을 반환한다.
+        ``allow_unmatched``는 호출부가 입력을 답안형으로 이미 판별했을 때만 최근
+        질문을 찾는 좁은 호환 경로다. 만료된 질문은 반환하지 않는다.
         """
+
+        if focus_word is None and not allow_unmatched:
+            return None
 
         with self._lock:
             state = self._proactive.get((actor_id, video_id))
@@ -436,9 +488,25 @@ class InMemoryTutorState:
             for question_id, stored_focus_word in candidates:
                 if question_id in state.answered_question_ids:
                     continue
+                if not self._is_proactive_question_active(state, question_id):
+                    continue
                 if focus_word is None or stored_focus_word.casefold() == focus_word.casefold():
                     return question_id, stored_focus_word
             return None
+
+    def _is_proactive_question_active(
+        self,
+        state: _ProactiveState,
+        question_id: str,
+    ) -> bool:
+        """선제 질문이 아직 답변 가능한 30초 창 안에 있는지 확인한다."""
+
+        created_at = state.question_created_at.get(question_id)
+        if created_at is None:
+            # 기존 프로세스 상태와의 호환을 위해 생성 시각이 없는 항목은
+            # 만료를 적용할 수 없으므로 활성 상태로 취급한다.
+            return True
+        return self._clock() - created_at < self.proactive_question_ttl_seconds
 
     def mark_proactive_question_answered(
         self,
@@ -446,7 +514,7 @@ class InMemoryTutorState:
         video_id: str,
         question_id: str,
     ) -> None:
-        """자동 연결한 선제 질문을 한 번만 채점하도록 소비 처리한다."""
+        """명시적으로 답변한 선제 질문을 다시 채점하지 않도록 소비 처리한다."""
 
         with self._lock:
             state = self._proactive.get((actor_id, video_id))

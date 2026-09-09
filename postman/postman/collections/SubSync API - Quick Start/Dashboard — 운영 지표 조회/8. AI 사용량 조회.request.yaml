@@ -1,0 +1,18 @@
+$kind: http-request
+description: llm_usage의 토큰 합계, provider/model별 사용량, 일별 사용량을 조회합니다.
+url: "{{base_url}}/api/v1/dashboard/usage?days={{dashboard_days}}"
+method: GET
+queryParams:
+  days: "{{dashboard_days}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('AI 사용량을 받는다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.summary).to.have.property('total_tokens');
+        pm.expect(body.providers).to.be.an('array');
+        pm.expect(body.daily_usage).to.be.an('array');
+      });
+    language: text/javascript
+order: 2000

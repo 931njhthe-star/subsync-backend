@@ -69,3 +69,50 @@ class ApiLogRepository:
                 json=entry.as_row(),
             )
         response.raise_for_status()
+
+    async def list_recent(
+        self,
+        *,
+        since: datetime,
+        limit: int = 10_000,
+    ) -> list[dict[str, object]]:
+        """대시보드 집계에 필요한 기간 내 ``api_logs`` 행을 조회한다.
+
+        요청·응답 본문과 오류 원문은 개인정보·자막이 포함될 수 있어 조회하지
+        않는다. 대시보드에는 endpoint, 상태 코드, 성공 여부, 처리 시간만 제공한다.
+
+        Args:
+            since: ``requested_at`` 기준으로 포함할 시작 시각(UTC).
+            limit: 한 번에 읽을 최대 행 수. 대시보드용 안전 상한은 10,000건이다.
+
+        Returns:
+            API 호출 집계에 사용할 Supabase 행 목록.
+        """
+
+        if not self.is_configured:
+            return []
+
+        safe_limit = min(max(limit, 1), 10_000)
+        params = {
+            "select": (
+                "api_name,user_id,requested_at,response_time_ms,status_code,success"
+            ),
+            "requested_at": f"gte.{since.astimezone(timezone.utc).isoformat()}",
+            "order": "requested_at.desc",
+            "limit": str(safe_limit),
+        }
+        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+            response = await client.get(
+                f"{self._url}/rest/v1/api_logs",
+                headers={
+                    "apikey": self._secret_key,
+                    "Authorization": f"Bearer {self._secret_key}",
+                    "Content-Type": "application/json",
+                },
+                params=params,
+            )
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise ValueError("Supabase api_logs 응답 형식이 올바르지 않습니다.")
+        return [row for row in rows if isinstance(row, dict)]

@@ -1,0 +1,19 @@
+$kind: http-request
+description: 두 테이블의 KPI, 일별 AI 사용량, 최근 API 활동을 조회합니다.
+url: "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10"
+method: GET
+queryParams:
+  days: "{{dashboard_days}}"
+  recent_limit: "10"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Dashboard Home 요약을 받는다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body).to.have.property('tracked_user_count');
+        pm.expect(body).to.have.property('daily_ai_usage');
+        pm.expect(body.recent_activity).to.be.an('array');
+      });
+    language: text/javascript
+order: 1000
