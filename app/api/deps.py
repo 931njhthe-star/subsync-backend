@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import settings
 from app.core.security import AuthTokenError, AuthUser, fetch_supabase_auth_user
-
 
 # 헤더가 없을 때 FastAPI 기본 403 대신 401을 내려 로그인 필요를 분명히 한다.
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -38,16 +41,9 @@ async def get_current_user(
             else status.HTTP_401_UNAUTHORIZED
         )
         raise HTTPException(status_code=status_code, detail=str(error)) from error
+
+
 """API dependency 모음."""
-
-from __future__ import annotations
-
-from typing import Annotated
-from uuid import UUID
-
-from fastapi import Header, HTTPException
-
-from app.core.config import settings
 
 
 async def get_saved_words_user_id(
@@ -56,8 +52,7 @@ async def get_saved_words_user_id(
         Header(
             alias="X-Dev-User-ID",
             description=(
-                "OAuth 연결 전 로컬 테스트용 사용자 UUID. "
-                "운영 환경에서는 사용하지 않음"
+                "OAuth 연결 전 로컬 테스트용 사용자 UUID. 운영 환경에서는 사용하지 않음"
             ),
         ),
     ] = None,

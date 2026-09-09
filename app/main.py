@@ -13,12 +13,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.dictionary import router as dictionary_router
 from app.api.v1.tutor import router as tutor_router
 from app.api.v1.words import router as words_router
 from app.core.config import settings
 from app.db.api_logs import ApiLogEntry, ApiLogRepository
-
 
 logger = logging.getLogger(__name__)
 api_log_repository = ApiLogRepository(
@@ -101,13 +101,16 @@ async def write_api_log(request: Request, call_next) -> Response:
             error_message=(
                 None
                 if status_code < 400
-                else "client_error" if status_code < 500 else "server_error"
+                else "client_error"
+                if status_code < 500
+                else "server_error"
             ),
         )
         # 실제 응답 전송 뒤 실행해 Supabase 지연이 Tutor 응답 시간을 늘리지 않게 한다.
         response.background = BackgroundTask(_write_api_log_safely, entry)
 
     return response
+
 
 # 버전이 필요한 기능은 `/api/v1` 아래에 모아 이후 하위 호환성을 유지한다.
 app.include_router(auth_router, prefix="/api/v1")
