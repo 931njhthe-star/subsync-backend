@@ -28,8 +28,12 @@ CREATE TABLE IF NOT EXISTS public.saved_words (
     id UUID PRIMARY KEY,
     user_id UUID REFERENCES public.users(id),
     word TEXT,
+    word_lower TEXT NOT NULL,
     saved_at TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS saved_words_user_word_lower_key
+    ON public.saved_words (user_id, word_lower);
 
 -- 4. ai_conversations: 영상별 AI 질문·답변과 피드백
 CREATE TABLE IF NOT EXISTS public.ai_conversations (
@@ -51,7 +55,9 @@ CREATE TABLE IF NOT EXISTS public.llm_usage (
     input_tokens INTEGER,
     output_tokens INTEGER,
     total_tokens INTEGER,
-    used_at TIMESTAMPTZ
+    used_at TIMESTAMPTZ,
+    finish_reason TEXT,
+    provider_latency INTEGER
 );
 
 -- 6. api_logs: API 요청 결과와 응답 시간 기록

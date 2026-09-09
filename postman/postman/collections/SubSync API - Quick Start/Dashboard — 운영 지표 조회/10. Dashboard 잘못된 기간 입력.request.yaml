@@ -1,0 +1,14 @@
+$kind: http-request
+description: 지원 범위(1~90일)를 벗어난 기간은 422로 거부합니다.
+url: "{{base_url}}/api/v1/dashboard/usage?days=0"
+method: GET
+queryParams:
+  days: "0"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('잘못된 기간을 거부한다', function () {
+        pm.response.to.have.status(422);
+      });
+    language: text/javascript
+order: 4000

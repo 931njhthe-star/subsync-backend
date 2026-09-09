@@ -1,7 +1,7 @@
 """애플리케이션 설정.
-
 환경변수로부터 Video Tutor 실행 설정과 외부 LLM 키를 로드한다.
 `--env-file` 없이 서버를 켜도 백엔드 루트의 `.env`를 읽는다.
+환경변수로부터 API 주소, DB 접속정보, 캐시 설정, 외부 API Key를 로드한다.
 """
 
 import os
@@ -14,6 +14,16 @@ from dotenv import load_dotenv
 # 서버 실행 시에는 `--env-file` 없이도 백엔드 루트 `.env`를 로드한다.
 if "pytest" not in sys.modules:
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_FILE, override=False)
+
+# print("env_path=", ENV_FILE)
+# print("env_file_exists=", ENV_FILE.exists())
+# print("deepl_key_present=", bool(os.getenv("DEEPL_API_KEY")))
 
 
 class Settings:
@@ -29,6 +39,40 @@ class Settings:
     # 운영 지표만 남긴다.
     supabase_url: str = os.getenv("SUPABASE_URL", "").rstrip("/")
     supabase_secret_key: str = os.getenv("SUPABASE_SECRET_KEY", "")
+
+    # 사전 조회는 Redis에 요청된 단어만 저장한다. REDIS_URL이 비어 있으면
+    # Redis 없이도 외부 사전 API로 계속 동작하도록 서비스에서 처리한다.
+    redis_url: str = os.getenv("REDIS_URL", "").strip()
+    dictionary_cache_ttl_seconds: int = int(
+        os.getenv("DICTIONARY_CACHE_TTL_SECONDS", "86400") or "86400"
+    )
+    dictionary_api_url: str = (
+        os.getenv(
+            "DICTIONARY_API_URL",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+        ).strip()
+        or "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+    )
+    dictionary_timeout_seconds: float = float(
+        os.getenv("DICTIONARY_TIMEOUT_SECONDS", "8") or "8"
+    )
+    # Free Dictionary API 장애 시 영어 Wiktionary REST API를 보조 provider로 사용한다.
+    dictionary_fallback_api_url: str = (
+        os.getenv(
+            "DICTIONARY_FALLBACK_API_URL",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+        ).strip()
+        or "https://en.wiktionary.org/api/rest_v1/page/definition/{word}"
+    )
+    deepl_api_key: str = os.getenv("DEEPL_API_KEY", "").strip()
+    print("DEEPL_API_KEY", deepl_api_key)
+    deepl_api_base_url: str = (
+        os.getenv("DEEPL_API_BASE_URL", "https://api-free.deepl.com").strip()
+        or "https://api-free.deepl.com"
+    )
+    deepl_timeout_seconds: float = float(
+        os.getenv("DEEPL_TIMEOUT_SECONDS", "8") or "8"
+    )
     api_log_timeout_seconds: float = float(
         os.getenv("API_LOG_TIMEOUT_SECONDS", "2")
     )
@@ -47,7 +91,7 @@ class Settings:
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
     tutor_max_output_tokens: int = int(
-        os.getenv("TUTOR_MAX_OUTPUT_TOKENS", "512")
+        os.getenv("TUTOR_MAX_OUTPUT_TOKENS", "1024")
     )
     gemini_daily_token_limit: int = int(
         os.getenv("GEMINI_DAILY_TOKEN_LIMIT", "0")
@@ -65,13 +109,14 @@ class Settings:
     groq_minute_token_limit: int = int(
         os.getenv("GROQ_MINUTE_TOKEN_LIMIT", "7000")
     )
-    # 선제 질문은 학습 흐름을 방해하지 않도록 영상 시점 기준으로 충분한 간격을 둔다.
+    # 선제 질문은 학습 흐름을 방해하지 않도록 첫 질문과 이후 질문 모두 영상 시점
+    # 기준으로 충분한 간격을 둔다.
     tutor_proactive_cooldown_seconds: float = float(
-        os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "180")
+        os.getenv("TUTOR_PROACTIVE_COOLDOWN_SECONDS", "120")
     )
     # 영상당 선제 질문 수를 제한한다. 0이면 선제 질문을 표시하지 않는다.
     tutor_proactive_max_questions_per_video: int = int(
-        os.getenv("TUTOR_PROACTIVE_MAX_QUESTIONS_PER_VIDEO", "3")
+        os.getenv("TUTOR_PROACTIVE_MAX_QUESTIONS_PER_VIDEO", "4")
     )
     # 로그인 연동 전에는 anonymous actor별로, 운영 전환 후에는 사용자별로
     # 분당 Tutor 질문 수를 제한해 실수나 비용 폭증을 막는다. 0은 제한 없음이다.

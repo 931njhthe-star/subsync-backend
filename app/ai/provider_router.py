@@ -183,6 +183,8 @@ class ProviderRouter:
                     prompt=prompt,
                     raw_text=generation.text,
                 ),
+                finish_reason=generation.finish_reason,
+                provider_latency=generation.provider_latency,
             )
         if isinstance(raw, str):
             input_tokens = estimate_prompt_tokens(prompt)

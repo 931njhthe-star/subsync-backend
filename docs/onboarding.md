@@ -54,6 +54,11 @@ Postman에서 두 JSON을 Import하고 `SubSync Local` 환경을 선택한다. �
 Postman의 `access_token`에 확장 프로그램 Access Token을 넣은 뒤
 `GET /api/v1/auth/me`로 확인한다.
 
+저장 단어 API는 Google OAuth 연결 전까지 개발 환경에서만 사용할 수 있다. Postman
+Collection의 `dev_user_id`를 Supabase `public.users`에 실제로 존재하는 UUID로 바꾸고
+`X-Dev-User-ID` header를 포함해 저장·조회·삭제를 확인한다. OAuth 연결 후에는 이 header를
+제거하고 검증된 Supabase Access Token의 JWT `sub`를 사용한다.
+
 ## 4. 작업 시작 방법
 
 1. `AGENTS.md`와 수정 분야의 `docs/` 문서를 읽는다.

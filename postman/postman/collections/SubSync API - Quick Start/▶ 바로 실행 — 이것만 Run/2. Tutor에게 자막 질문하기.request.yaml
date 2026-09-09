@@ -1,0 +1,40 @@
+$kind: http-request
+description: 자막 두 줄을 함께 보내는 최소 실행 예시입니다. 응답의 대화 ID는 다음 선택 요청에서 자동 사용됩니다.
+url: "{{base_url}}/api/v1/tutor/ask"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "video_id": "{{video_id}}",
+      "timestamp": {{timestamp}},
+      "user_message": "inconsistent는 여기서 어떤 뜻인가요?",
+      "recent_subtitles": [
+        {
+          "time": 36.8,
+          "en": "English spelling is famously inconsistent.",
+          "ko": "영어 철자는 유난히 일관성이 없습니다."
+        },
+        {
+          "time": 42.1,
+          "en": "Why does it work that way?",
+          "ko": "왜 그런 방식으로 작동할까요?"
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Tutor 답변을 받는다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.reply).to.be.a('string').and.not.empty;
+        pm.expect(['gemini', 'groq', 'stub']).to.include(body.provider);
+      });
+      const body = pm.response.json();
+      pm.collectionVariables.set('conversation_id', body.conversation_id);
+      pm.collectionVariables.set('message_id', body.message_id);
+    language: text/javascript
+order: 2000

@@ -1,0 +1,15 @@
+$kind: collection
+description: |-
+  # SubSync API 빠른 실행
+
+  서버를 실행한 뒤 `▶ 바로 실행` 폴더만 **Run** 하세요. 서버 연결과 자막 문맥 Tutor 답변을 순서대로 확인합니다.
+
+  `▶ 선택 기능`은 첫 Tutor 요청이 자동 저장한 대화 ID를 사용합니다.
+variables:
+  base_url: http://127.0.0.1:8000
+  video_id: XFhY4Vy3IHc
+  timestamp: "42.1"
+  conversation_id: ""
+  message_id: ""
+  proactive_question_id: ""
+  dashboard_days: "7"

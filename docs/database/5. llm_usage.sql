@@ -9,5 +9,7 @@ CREATE TABLE IF NOT EXISTS public.llm_usage (
     input_tokens INTEGER,
     output_tokens INTEGER,
     total_tokens INTEGER,
-    used_at TIMESTAMPTZ
+    used_at TIMESTAMPTZ,
+    finish_reason TEXT,
+    provider_latency INTEGER
 );

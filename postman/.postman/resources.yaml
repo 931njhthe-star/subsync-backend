@@ -13,3 +13,4 @@ localResources:
 cloudResources:
   collections:
     ../postman/collections/SubSync Backend API: ab07dad5-6139-41cb-b47c-fb0361e8e2fd
+    ../postman/collections/SubSync API - Quick Start: 09e1db8e-dfc3-4c58-8bbf-4dfd0b6e85d5

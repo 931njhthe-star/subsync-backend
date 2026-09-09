@@ -27,6 +27,12 @@
 `login_history`를 읽고 쓴다. Tutor 대화·피드백은 아직 개발용 메모리에 두고,
 `saved_words` repository는 구현되어 있지 않다.
 
+현재 FastAPI는 Tutor 대화·피드백을 개발용 메모리에 기록한다. Tutor 토큰 사용량은
+`llm_usage`에, HTTP 운영 로그는 `api_logs`에 기록하며, Streamlit Dashboard API가 두
+테이블을 기간별로 읽어 KPI·provider/model·endpoint별 집계로 반환한다. Supabase 설정이
+없으면 로컬 개발을 위해 조회는 빈 목록, 저장은 no-op으로 동작한다.
+
+
 ## 미확인 항목
 
 제공된 테이블 정보에는 다음 항목이 포함되지 않아 이 SQL에 추측으로 추가하지 않았다.

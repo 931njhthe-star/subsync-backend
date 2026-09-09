@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Protocol
 
 from app.ai.prompts import TutorPrompt
@@ -52,12 +53,18 @@ class TokenUsage:
 
 @dataclass(frozen=True)
 class LLMGeneration:
-    """모델 원문 응답과 provider/usage 메타데이터."""
+    """모델 원문과 사용량·종료 사유·provider 왕복 시간 메타데이터.
+
+    ``provider_latency``는 provider HTTP 요청을 보낸 뒤 응답을 받을 때까지의
+    밀리초 단위 시간이다. 응답 본문 파싱 시간과 Tutor 후처리 시간은 포함하지 않는다.
+    """
 
     text: str
     provider: str
     model: str
     usage: TokenUsage = TokenUsage()
+    finish_reason: str | None = None
+    provider_latency: int | None = None
 
 
 class LLMClient(Protocol):
@@ -75,6 +82,14 @@ def _as_non_negative_int(value: object) -> int:
     except (TypeError, ValueError):
         return 0
     return max(number, 0)
+
+
+def _as_optional_text(value: object) -> str | None:
+    """provider 메타데이터의 선택 문자열을 빈 값 없이 정규화한다."""
+
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
 
 
 def _retry_after_seconds(headers: object) -> float | None:
@@ -110,25 +125,51 @@ class RuleBasedTutorClient:
         focus_word = prompt.context.focus_word
         if current:
             expression = focus_word or "이 표현"
-            reply = (
-                f"{expression}: 현재 자막 \"{current.english}\"에서 확인해 보세요.\n"
-                "정확한 뜻과 쓰임은 이 문장 문맥 안에서 이해하는 것이 가장 좋습니다."
-            )
+            if prompt.context.is_proactive_answer:
+                # 네트워크 없는 fallback은 사용자의 답을 억지로 정답/오답으로
+                # 단정하지 않는다. 대신 현재 자막과 번역을 다시 보여 주어 대화가
+                # 끊기지 않도록 하고, 내부 provider 상태는 사용자 문장에 노출하지 않는다.
+                if current.korean:
+                    reply = (
+                        f"답변을 이 문장과 함께 다시 확인해 볼게요. '{expression}'이 들어간 "
+                        f"자막은 \"{current.english}\"이고, 전체 뜻은 \"{current.korean}\"입니다."
+                    )
+                else:
+                    reply = (
+                        f"답변을 이 문장과 함께 다시 확인해 볼게요. '{expression}'이 들어간 "
+                        f"자막은 \"{current.english}\"입니다. 번역 자막이 있으면 더 정확하게 설명할 수 있어요."
+                    )
+            elif current.korean:
+                reply = (
+                    f"'{expression}'은 현재 자막 \"{current.english}\"에서 사용됐어요. "
+                    f"이 문장의 뜻은 \"{current.korean}\"입니다. 표현의 뉘앙스가 궁금하면 "
+                    "어느 부분이 헷갈렸는지 말해 주세요."
+                )
+            else:
+                reply = (
+                    f"'{expression}'은 현재 자막 \"{current.english}\"에서 사용됐어요. "
+                    "번역 자막과 함께 보면 문장 속 뜻과 쓰임을 더 정확하게 설명할 수 있어요."
+                )
         else:
+            expression = focus_word or "질문하신 표현"
             reply = (
-                "현재 시점에 연결된 자막이 없습니다. 영상의 자막 문장과 함께 질문해 "
-                "주시면 그 문맥에 맞춰 설명할게요."
+                f"{expression}에 대해 도와드릴게요. 자막 문맥이 없어도 일반적인 뜻과 "
+                "쓰임을 중심으로 설명할 수 있어요."
             )
         response: dict[str, object] = {
             "reply": reply,
             "suggested_questions": [],
         }
+
         if prompt.context.is_proactive_answer:
+            hint = (
+                f"'{focus_word or '이 표현'}'가 들어간 문장을 다시 보고, 앞뒤 단어가 "
+                "어떤 의미를 더하는지 생각해 보세요."
+            )
             response["proactive_feedback"] = {
                 "result": "unavailable",
                 "criteria": (
-                    f"'{focus_word or '이 표현'}'은 stub provider가 의미를 정확히 판정할 수 없습니다. "
-                    "Gemini 또는 Groq provider를 연결하면 자막 문맥으로 정답을 판정합니다."
+                    f"힌트: {hint}"
                 ),
             }
         return json.dumps(response, ensure_ascii=False)
@@ -178,7 +219,6 @@ class GeminiClient:
             f"{self.model}:generateContent"
         )
         generation_config = {
-            "temperature": 0.35,
             "maxOutputTokens": max(self.max_output_tokens, 1),
             # Gemini 3는 기본 thinking 수준이 높아 긴 Tutor 문맥에서 답변 JSON의
             # 출력 공간을 잠식할 수 있다. 간단한 학습 대화는 low로 제한해 지연과
@@ -186,7 +226,11 @@ class GeminiClient:
             "responseMimeType": "application/json",
         }
         if self.model.startswith("gemini-3"):
+            # Gemini 3 계열은 temperature 같은 샘플링 파라미터를 지원하지 않으므로
+            # 함께 보내면 provider가 400을 반환하고 불필요하게 stub으로 내려갈 수 있다.
             generation_config["thinkingConfig"] = {"thinkingLevel": "low"}
+        else:
+            generation_config["temperature"] = 0.35
 
         payload = {
             "system_instruction": {
@@ -201,6 +245,7 @@ class GeminiClient:
             "generationConfig": generation_config,
         }
 
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
@@ -216,6 +261,7 @@ class GeminiClient:
                 f"Gemini request failed: {exc}",
                 provider=self.name,
             ) from exc
+        provider_latency = round((perf_counter() - started_at) * 1_000)
 
         if response.is_error:
             detail = response.text[:500]
@@ -228,7 +274,8 @@ class GeminiClient:
 
         try:
             data = response.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            candidate = data["candidates"][0]
+            text = candidate["content"]["parts"][0]["text"]
             metadata = data.get("usageMetadata") or {}
             usage = TokenUsage(
                 input_tokens=_as_non_negative_int(metadata.get("promptTokenCount")),
@@ -244,6 +291,8 @@ class GeminiClient:
                 provider=self.name,
                 model=self.model,
                 usage=usage,
+                finish_reason=_as_optional_text(candidate.get("finishReason")),
+                provider_latency=provider_latency,
             )
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(
@@ -301,6 +350,7 @@ class GroqClient:
             "max_tokens": max(self.max_output_tokens, 1),
         }
 
+        started_at = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
@@ -316,6 +366,7 @@ class GroqClient:
                 f"Groq request failed: {exc}",
                 provider=self.name,
             ) from exc
+        provider_latency = round((perf_counter() - started_at) * 1_000)
 
         if response.is_error:
             detail = response.text[:500]
@@ -328,7 +379,8 @@ class GroqClient:
 
         try:
             data = response.json()
-            message = data["choices"][0]["message"]
+            choice = data["choices"][0]
+            message = choice["message"]
             text = message["content"]
             if isinstance(text, list):
                 text = "".join(
@@ -352,6 +404,8 @@ class GroqClient:
                 provider=self.name,
                 model=self.model,
                 usage=usage,
+                finish_reason=_as_optional_text(choice.get("finish_reason")),
+                provider_latency=provider_latency,
             )
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError(
