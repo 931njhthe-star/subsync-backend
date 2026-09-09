@@ -1,0 +1,3 @@
+$kind: collection
+description: 첫 폴더의 2번 요청을 먼저 실행한 뒤 원하는 항목만 Send 하거나, 전체 Collection을 순서대로 Run 하세요.
+order: 2000

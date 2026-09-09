@@ -1,0 +1,23 @@
+$kind: http-request
+description: 2번 요청의 첫 Tutor 답변에 도움이 됐다는 평가를 기록합니다.
+url: "{{base_url}}/api/v1/tutor/feedback"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "conversation_id": "{{conversation_id}}",
+      "message_id": "{{message_id}}",
+      "rating": "helpful"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('평가가 기록된다', function () {
+        pm.response.to.have.status(201);
+        pm.expect(pm.response.json().rating).to.eql('helpful');
+      });
+    language: text/javascript
+order: 4000

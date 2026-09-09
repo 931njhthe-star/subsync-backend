@@ -1,0 +1,188 @@
+{
+  "info": {
+    "_postman_id": "8d45be32-7f4a-4f0e-a8d7-2ad5f8a0c901",
+    "name": "SubSync API - Quick Start",
+    "description": {"content": "# SubSync API 빠른 실행\n\n서버를 실행한 뒤 `▶ 바로 실행` 폴더만 **Run** 하세요. 서버 연결과 자막 문맥 Tutor 답변을 순서대로 확인합니다.\n\n`▶ 선택 기능`은 첫 Tutor 요청이 자동 저장한 대화 ID를 사용합니다.", "type": "text/markdown"},
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key":"base_url","value":"http://127.0.0.1:8000","type":"string"},
+    {"key":"video_id","value":"XFhY4Vy3IHc","type":"string"},
+    {"key":"timestamp","value":"42.1","type":"string"},
+    {"key":"conversation_id","value":"","type":"string"},
+    {"key":"message_id","value":"","type":"string"},
+    {"key":"proactive_question_id","value":"","type":"string"},
+    {"key":"access_token","value":"","type":"string"}
+    {"key":"dev_user_id","value":"00000000-0000-0000-0000-000000000000","type":"string"},
+    {"key":"saved_word_id","value":"","type":"string"}
+    {"key":"dashboard_days","value":"7","type":"string"}
+
+  ],
+  "item": [
+    {
+      "name": "▶ 바로 실행 — 이것만 Run",
+      "description": "처음 테스트할 때 이 폴더만 실행하세요. 별도 입력 없이 정상 응답을 확인할 수 있습니다.",
+      "item": [
+        {
+          "name": "1. 서버 연결 확인",
+          "request": {"method":"GET","header":[],"url":"{{base_url}}/health","description":"서버가 실행 중인지 확인합니다."},
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('서버가 정상 동작한다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json().status).to.eql('ok');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "2. Tutor에게 자막 질문하기",
+          "request": {
+            "method":"POST",
+            "header":[{"key":"Content-Type","value":"application/json"}],
+            "body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": {{timestamp}},\n  \"user_message\": \"inconsistent는 여기서 어떤 뜻인가요?\",\n  \"recent_subtitles\": [\n    {\n      \"time\": 36.8,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    },\n    {\n      \"time\": 42.1,\n      \"en\": \"Why does it work that way?\",\n      \"ko\": \"왜 그런 방식으로 작동할까요?\"\n    }\n  ]\n}","options":{"raw":{"language":"json"}}},
+            "url":"{{base_url}}/api/v1/tutor/ask",
+            "description":"자막 두 줄을 함께 보내는 최소 실행 예시입니다. 응답의 대화 ID는 다음 선택 요청에서 자동 사용됩니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Tutor 답변을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.reply).to.be.a('string').and.not.empty;","  pm.expect(['gemini', 'groq', 'stub']).to.include(body.provider);","});","const body = pm.response.json();","pm.collectionVariables.set('conversation_id', body.conversation_id);","pm.collectionVariables.set('message_id', body.message_id);"]}}],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "▶ 선택 기능 — 바로 실행 후 사용",
+      "description": "첫 폴더의 2번 요청을 먼저 실행한 뒤 원하는 항목만 Send 하거나, 전체 Collection을 순서대로 Run 하세요.",
+      "item": [
+        {
+          "name":"3. 같은 대화에서 후속 질문하기",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": {{timestamp}},\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"user_message\": \"그 단어의 반대말은 무엇인가요?\",\n  \"recent_subtitles\": [\n    {\n      \"time\": 36.8,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ]\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/ask","description":"2번 요청의 conversation_id를 자동으로 사용해 대화 문맥을 이어 갑니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('문맥을 이어 답변한다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json().reply).to.be.a('string').and.not.empty;","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"4. Tutor 선제 질문 확인",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ],\n  \"playback_state\": \"playing\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/proactive","description":"재생 중 Tutor가 먼저 제안할 질문이 있는지 확인합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 판단 결과를 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('should_show');","  if (body.should_show) {","    pm.collectionVariables.set('proactive_question_id', body.question_id);","  }","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"5. 선제 질문 답안 피드백",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"video_id\": \"{{video_id}}\",\n  \"timestamp\": 42.1,\n  \"proactive_question_id\": \"{{proactive_question_id}}\",\n  \"user_message\": \"영어 철자는 일관성이 없다는 뜻이라고 생각해요.\",\n  \"recent_subtitles\": [\n    {\n      \"time\": 42.1,\n      \"en\": \"English spelling is famously inconsistent.\",\n      \"ko\": \"영어 철자는 유난히 일관성이 없습니다.\"\n    }\n  ]\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/ask","description":"4번 응답의 question_id를 proactive_question_id 변수에 넣어 명시적으로 답변 모드로 호출합니다. reply는 자연스러운 피드백이고 proactive_feedback에는 선택적인 정답 근거가 포함됩니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('선제 질문 답안 피드백을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.reply).to.be.a('string').and.not.empty;","  pm.expect(body.reply).to.not.include('판정:');","  pm.expect(body.reply).to.not.include('판정 불가');","  const feedback = body.proactive_feedback;","  if (feedback !== null) {","    pm.expect(['correct', 'partial', 'incorrect']).to.include(feedback.result);","    pm.expect(feedback.criteria).to.be.a('string').and.not.empty;","  }","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"6. Tutor 답변 평가 보내기",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"2번 요청의 첫 Tutor 답변에 도움이 됐다는 평가를 기록합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('평가가 기록된다', function () {","  pm.response.to.have.status(201);","  pm.expect(pm.response.json().rating).to.eql('helpful');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"7. 로그인 세션 확인",
+          "request":{
+            "method":"GET",
+            "header":[{"key":"Authorization","value":"Bearer {{access_token}}"}],
+            "url":"{{base_url}}/api/v1/auth/me",
+            "description":"확장 프로그램 Google 로그인 후 복사한 Supabase Access Token으로 users와 login_history를 동기화합니다. access_token 변수를 채운 뒤 실행합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그인 사용자를 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.id).to.be.a('string').and.not.empty;","  pm.expect(body).to.have.property('email');","  pm.expect(body).to.have.property('google_account_id');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"8. 로그인 이력 로그아웃 기록",
+          "request":{
+            "method":"POST",
+            "header":[{"key":"Authorization","value":"Bearer {{access_token}}"}],
+            "url":"{{base_url}}/api/v1/auth/logout",
+            "description":"열린 login_history 행에 logout_at을 기록합니다. 7번을 먼저 실행합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그아웃 이력이 기록된다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json().ok).to.eql(true);","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"9. 토큰 없이 로그인 확인 거부",
+          "request":{
+            "method":"GET",
+            "header":[],
+            "url":"{{base_url}}/api/v1/auth/me",
+            "description":"Authorization 헤더가 없으면 401이어야 합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그인이 필요하다', function () {","  pm.response.to.have.status(401);","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"6. 같은 답변에 중복 평가 거부",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"not_helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"이미 평가한 Tutor 답변은 수정하거나 다시 선택할 수 없습니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('중복 평가는 거부된다', function () {","  pm.response.to.have.status(409);","});"]}}],
+          "response":[]
+        }
+      ]
+    },
+    {
+      "name":"▶ 저장 단어 — OAuth 연결 전 개발용",
+      "description":"Google OAuth 연결 전 임시 테스트용입니다. dev_user_id를 public.users에 실제로 존재하는 UUID로 바꾼 뒤 실행하세요.",
+      "item":[
+        {
+          "name":"저장 단어 저장",
+          "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"},{"key":"X-Dev-User-ID","value":"{{dev_user_id}}"}],"body":{"mode":"raw","raw":"{\n  \"word\": \"Apple\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/words","description":"처음 저장하면 201, 같은 사용자가 apple을 다시 저장하면 200을 반환합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('저장 단어가 저장된다', function () {","  pm.expect([200, 201]).to.include(pm.response.code);","  const body = pm.response.json();","  pm.expect(body.word).to.eql('Apple');","  pm.collectionVariables.set('saved_word_id', body.id);","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"저장 단어 목록 조회",
+          "request":{"method":"GET","header":[{"key":"X-Dev-User-ID","value":"{{dev_user_id}}"}],"url":"{{base_url}}/api/v1/words","description":"현재 개발 사용자에게 저장된 단어를 최근 저장 순으로 조회합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('저장 단어 목록을 조회한다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json().items).to.be.an('array');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"저장 단어 삭제",
+          "request":{"method":"DELETE","header":[{"key":"X-Dev-User-ID","value":"{{dev_user_id}}"}],"url":"{{base_url}}/api/v1/words/{{saved_word_id}}","description":"저장 단어 ID를 기준으로 개발 사용자의 단어를 삭제합니다."},
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('저장 단어가 삭제된다', function () {","  pm.response.to.have.status(204);","});"]}}],
+          "response":[]
+
+      "name": "Dashboard — 운영 지표 조회",
+      "description": "Streamlit Dashboard에서 사용할 llm_usage·api_logs 집계 API입니다. Supabase가 설정되지 않은 로컬 환경에서는 빈 집계가 반환됩니다.",
+      "item": [
+        {
+          "name": "7. Dashboard Home 요약",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10",
+            "description": "두 테이블의 KPI, 일별 AI 사용량, 최근 API 활동을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Dashboard Home 요약을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('tracked_user_count');","  pm.expect(body).to.have.property('daily_ai_usage');","  pm.expect(body.recent_activity).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "8. AI 사용량 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days={{dashboard_days}}",
+            "description": "llm_usage의 토큰 합계, provider/model별 사용량, 일별 사용량을 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('AI 사용량을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('total_tokens');","  pm.expect(body.providers).to.be.an('array');","  pm.expect(body.daily_usage).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "9. API 호출 조회",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/api-calls?days={{dashboard_days}}&recent_limit=10",
+            "description": "api_logs의 endpoint별 호출량, 성공률, latency, 최근 상태 코드를 조회합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('API 호출 현황을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('success_rate');","  pm.expect(body.endpoints).to.be.an('array');","  pm.expect(body.recent_calls).to.be.an('array');","});"]}}],
+          "response": []
+        },
+        {
+          "name": "10. Dashboard 잘못된 기간 입력",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dashboard/usage?days=0",
+            "description": "지원 범위(1~90일)를 벗어난 기간은 422로 거부합니다."
+          },
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('잘못된 기간을 거부한다', function () {","  pm.response.to.have.status(422);","});"]}}],
+          "response": []
+
+        }
+      ]
+    }
+  ]
+}

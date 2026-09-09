@@ -1,0 +1,19 @@
+$kind: http-request
+description: api_logs의 endpoint별 호출량, 성공률, latency, 최근 상태 코드를 조회합니다.
+url: "{{base_url}}/api/v1/dashboard/api-calls?days={{dashboard_days}}&recent_limit=10"
+method: GET
+queryParams:
+  days: "{{dashboard_days}}"
+  recent_limit: "10"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('API 호출 현황을 받는다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.summary).to.have.property('success_rate');
+        pm.expect(body.endpoints).to.be.an('array');
+        pm.expect(body.recent_calls).to.be.an('array');
+      });
+    language: text/javascript
+order: 3000
