@@ -5,6 +5,8 @@ YouTube 자막 문맥을 활용하는 AI Video Tutor의 FastAPI 백엔드입니�
 ## 현재 구현
 
 - `GET /health`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
 - `GET /api/v1/dictionary/hover`
 - `GET /api/v1/dictionary/detail`
 - `POST /api/v1/words`
@@ -102,6 +104,7 @@ Video Tutor는 기본적으로 `LLM_PROVIDER=stub`으로 실행되며, API 키 �
 
 - [문서 인덱스](docs/README.md)
 - [온보딩 안내](docs/onboarding.md)
+- [로그인 연동 변경사항과 주의사항](docs/auth-login.md)
 - [DB 기준과 스키마](docs/database/README.md)
 
 ## 개발 원칙

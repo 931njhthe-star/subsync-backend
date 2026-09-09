@@ -12,6 +12,7 @@
     {"key":"conversation_id","value":"","type":"string"},
     {"key":"message_id","value":"","type":"string"},
     {"key":"proactive_question_id","value":"","type":"string"},
+    {"key":"access_token","value":"","type":"string"}
     {"key":"dev_user_id","value":"00000000-0000-0000-0000-000000000000","type":"string"},
     {"key":"saved_word_id","value":"","type":"string"}
     {"key":"dashboard_days","value":"7","type":"string"}
@@ -68,6 +69,39 @@
           "name":"6. Tutor 답변 평가 보내기",
           "request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"message_id\": \"{{message_id}}\",\n  \"rating\": \"helpful\"\n}","options":{"raw":{"language":"json"}}},"url":"{{base_url}}/api/v1/tutor/feedback","description":"2번 요청의 첫 Tutor 답변에 도움이 됐다는 평가를 기록합니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('평가가 기록된다', function () {","  pm.response.to.have.status(201);","  pm.expect(pm.response.json().rating).to.eql('helpful');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"7. 로그인 세션 확인",
+          "request":{
+            "method":"GET",
+            "header":[{"key":"Authorization","value":"Bearer {{access_token}}"}],
+            "url":"{{base_url}}/api/v1/auth/me",
+            "description":"확장 프로그램 Google 로그인 후 복사한 Supabase Access Token으로 users와 login_history를 동기화합니다. access_token 변수를 채운 뒤 실행합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그인 사용자를 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.id).to.be.a('string').and.not.empty;","  pm.expect(body).to.have.property('email');","  pm.expect(body).to.have.property('google_account_id');","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"8. 로그인 이력 로그아웃 기록",
+          "request":{
+            "method":"POST",
+            "header":[{"key":"Authorization","value":"Bearer {{access_token}}"}],
+            "url":"{{base_url}}/api/v1/auth/logout",
+            "description":"열린 login_history 행에 logout_at을 기록합니다. 7번을 먼저 실행합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그아웃 이력이 기록된다', function () {","  pm.response.to.have.status(200);","  pm.expect(pm.response.json().ok).to.eql(true);","});"]}}],
+          "response":[]
+        },
+        {
+          "name":"9. 토큰 없이 로그인 확인 거부",
+          "request":{
+            "method":"GET",
+            "header":[],
+            "url":"{{base_url}}/api/v1/auth/me",
+            "description":"Authorization 헤더가 없으면 401이어야 합니다."
+          },
+          "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('로그인이 필요하다', function () {","  pm.response.to.have.status(401);","});"]}}],
           "response":[]
         },
         {

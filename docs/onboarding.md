@@ -2,6 +2,7 @@
 
 이 문서는 처음 참여한 팀원이 로컬에서 백엔드를 실행하고 첫 작업을 시작하기 위한
 짧은 안내서다. 세부 규칙은 저장소 루트의 `AGENTS.md`를 먼저 읽는다.
+Google 로그인과 `users`/`login_history` 연동은 [auth-login.md](auth-login.md)를 본다.
 
 ## 1. 준비물
 
@@ -23,7 +24,7 @@ python --version
 터미널 1에서 서버를 실행한다.
 
 ```bash
-uv run uvicorn app.main:app --reload --port 8000 --env-file .env
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 브라우저에서 다음 주소를 확인한다.
@@ -49,9 +50,9 @@ uv run pytest
 - `postman/SubSync-Local.postman_environment.json`
 
 Postman에서 두 JSON을 Import하고 `SubSync Local` 환경을 선택한다. 서버가 실행된
-상태에서 Collection Runner를 실행한다. 현재 Tutor API에는 인증 dependency가 없으므로
-토큰 없이 확인한다. Supabase Auth를 연결해 보호 API를 추가할 때는 이 안내와 Postman
-Collection에 Bearer Token 설정을 함께 추가한다.
+상태에서 Collection Runner를 실행한다. Tutor API는 토큰 없이 확인한다. 로그인 동기화는
+Postman의 `access_token`에 확장 프로그램 Access Token을 넣은 뒤
+`GET /api/v1/auth/me`로 확인한다.
 
 저장 단어 API는 Google OAuth 연결 전까지 개발 환경에서만 사용할 수 있다. Postman
 Collection의 `dev_user_id`를 Supabase `public.users`에 실제로 존재하는 UUID로 바꾸고
