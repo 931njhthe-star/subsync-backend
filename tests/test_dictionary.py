@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.dictionary import get_dictionary_service
 from app.cache.redis_client import RedisJsonCache
+from app.core.config import settings
 from app.main import app
 from app.services.dict_service import (
     DictionaryProviderError,
@@ -139,6 +140,62 @@ def test_parse_wiktionary_payload_extracts_english_entry_and_removes_markup():
     assert parsed["source"] == "wiktionary"
 
 
+def test_parse_wiktionary_payload_prioritizes_common_senses():
+    """희귀·법률 의미보다 일반적인 학습 의미를 먼저 배치한다."""
+
+    parsed = parse_wiktionary_payload(
+        {
+            "en": [
+                {
+                    "partOfSpeech": "noun",
+                    "definitions": [
+                        {
+                            "definition": "(law, euphemistic) The human genitalia; specifically the penis.",
+                            "rawTags": ["law", "euphemistic"],
+                        },
+                        {
+                            "definition": "An individual who has been granted personhood; usually a human being.",
+                            "rawTags": [],
+                        },
+                    ],
+                }
+            ]
+        },
+        "person",
+    )
+
+    assert parsed["english_definitions"][0].startswith("An individual")
+
+
+def test_parse_wiktionary_payload_extracts_base_lemma_from_inflected_form():
+    """활용형 설명에서 기본형을 찾아 별도 조회할 수 있게 한다."""
+
+    parsed = parse_wiktionary_payload(
+        {
+            "en": [
+                {
+                    "partOfSpeech": "verb",
+                    "definitions": [
+                        {
+                            "definition": "third-person singular simple present indicative of have"
+                        }
+                    ],
+                },
+                {
+                    "partOfSpeech": "noun",
+                    "definitions": [
+                        {"definition": "plural of ha (the physical body)"}
+                    ],
+                },
+            ]
+        },
+        "has",
+    )
+
+    assert parsed["english_definitions"] == []
+    assert parsed["lemma"] == "have"
+
+
 def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     """첫 조회 뒤 같은 단어를 다시 요청하면 외부 사전 호출을 생략한다."""
 
@@ -146,7 +203,11 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     service = DictionaryService(cache=cache)
     calls = {"dictionary": 0, "deepl": 0}
 
-    async def fake_dictionary(word: str) -> dict[str, Any]:
+    async def fake_dictionary(
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
         calls["dictionary"] += 1
         return {
             "phonetic": "/ˈɒnɪst/",
@@ -171,7 +232,58 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     assert first.cache_hit is False
     assert second.cache_hit is True
     assert calls == {"dictionary": 1, "deepl": 1}
-    assert list(cache.values) == ["dictionary:v2:word:honest"]
+    assert list(cache.values) == ["dictionary:v3:word:honest"]
+
+
+def test_dictionary_service_uses_parser_for_configured_wiktionary_url(monkeypatch):
+    """환경변수가 Wiktionary를 가리키면 Free Dictionary 파서를 사용하지 않는다."""
+
+    service = DictionaryService(cache=MemoryCache())
+    provider_calls: list[tuple[str, str]] = []
+
+    async def fake_wiktionary(
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
+        provider_calls.append((word, base_url))
+        return {
+            "phonetic": None,
+            "part_of_speech": "Adjective",
+            "english_definitions": ["Truthful and sincere"],
+            "examples": [],
+            "source": "wiktionary",
+        }
+
+    async def unexpected_free_dictionary(word: str) -> dict[str, Any]:
+        raise AssertionError("Wiktionary 설정에서 Free Dictionary를 호출하면 안 됩니다.")
+
+    async def fake_translate(
+        definitions: list[str],
+        context: str | None,
+    ) -> tuple[str, ...]:
+        return ("정직한",)
+
+    monkeypatch.setattr(
+        settings,
+        "dictionary_api_url",
+        "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+    )
+    monkeypatch.setattr(
+        settings,
+        "dictionary_fallback_api_url",
+        "https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
+    )
+    monkeypatch.setattr(service, "_load_from_free_dictionary", unexpected_free_dictionary)
+    monkeypatch.setattr(service, "_load_from_wiktionary", fake_wiktionary)
+    monkeypatch.setattr(service, "_translate_definitions", fake_translate)
+
+    result = asyncio.run(service.lookup("honest"))
+
+    assert result.definition_translations == ("정직한",)
+    assert provider_calls == [
+        ("honest", "https://en.wiktionary.org/api/rest_v1/page/definition/{word}")
+    ]
 
 
 def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypatch):
@@ -180,11 +292,19 @@ def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypa
     service = DictionaryService(cache=MemoryCache())
     provider_calls: list[str] = []
 
-    async def primary_provider_error(word: str) -> dict[str, Any]:
+    async def primary_provider_error(
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
         provider_calls.append("free_dictionary")
         raise DictionaryProviderError("timeout")
 
-    async def fallback_dictionary(word: str) -> dict[str, Any]:
+    async def fallback_dictionary(
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
         provider_calls.append("wiktionary")
         return {
             "phonetic": None,
@@ -222,7 +342,11 @@ def test_dictionary_service_selects_contextual_meaning_from_translated_candidate
 
     service = DictionaryService(cache=MemoryCache())
 
-    async def fake_dictionary(word: str) -> dict[str, Any]:
+    async def fake_dictionary(
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
         return {
             "phonetic": None,
             "part_of_speech": "Adjective",
@@ -300,6 +424,7 @@ def test_dictionary_routes_return_hover_and_detail_contract():
         "현재 문장에서는 솔직한 의미입니다."
     ]
     assert detail_response.status_code == 200
+    assert detail_response.json()["definitions"] == ["정직한", "솔직한"]
     assert detail_response.json()["context_meaning"] == (
         "현재 문장에서는 솔직한 의미입니다."
     )

@@ -1,4 +1,4 @@
-"""Free Dictionary와 DeepL을 연결하는 사전 조회 서비스."""
+"""설정된 영어 사전 provider와 DeepL을 연결하는 사전 조회 서비스."""
 
 from __future__ import annotations
 
@@ -20,8 +20,40 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+_NON_LEARNER_LABELS = (
+    "archaic",
+    "obsolete",
+    "rare",
+    "law",
+    "euphemistic",
+    "offensive",
+    "vulgar",
+    "dialectal",
+    "historical",
+    "dated",
+)
+
+_FORM_OF_PATTERNS = (
+    re.compile(
+        r"^(?:the\s+)?(?:plural|singular)\s+of\s+"
+        r"(?P<lemma>[A-Za-z][A-Za-z' -]*?)(?=\s*\(|[.;,:]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:first|second|third)[-\s]person\b.*?\bof\s+"
+        r"(?P<lemma>[A-Za-z][A-Za-z' -]*?)(?=\s*\(|[.;,:]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:an?\s+)?(?:inflection|conjugated\s+form|alternative\s+form|form)"
+        r"\s+of\s+(?P<lemma>[A-Za-z][A-Za-z' -]*?)(?=\s*\(|[.;,:]|$)",
+        re.IGNORECASE,
+    ),
+)
+
+
 class DictionaryWordNotFound(Exception):
-    """Free Dictionary에서 검색 단어를 찾지 못했을 때 발생한다."""
+    """설정된 영어 사전에서 검색 단어를 찾지 못했을 때 발생한다."""
 
 
 class DictionaryProviderError(Exception):
@@ -203,14 +235,14 @@ def parse_wiktionary_payload(
     if not isinstance(english_entries, list) or not english_entries:
         raise DictionaryWordNotFound(requested_word)
 
-    part_of_speech: str | None = None
-    english_definitions: list[str] = []
+    candidates: list[tuple[int, int, str, list[str], str | None, str | None]] = []
     examples: list[str] = []
+    candidate_order = 0
 
     for entry in english_entries:
         if not isinstance(entry, dict):
             continue
-        part_of_speech = part_of_speech or entry.get("partOfSpeech")
+        part_of_speech = entry.get("partOfSpeech")
         for definition_item in entry.get("definitions", []):
             if not isinstance(definition_item, dict):
                 continue
@@ -218,26 +250,130 @@ def parse_wiktionary_payload(
             definition = _clean_wiktionary_markup(
                 definition_item.get("definition")
             )
-            if definition:
-                english_definitions.append(definition)
+            if not definition:
+                continue
 
+            definition_examples: list[str] = []
             raw_examples = definition_item.get("examples", [])
             if isinstance(raw_examples, list):
                 for example in raw_examples:
                     cleaned_example = _clean_wiktionary_markup(example)
-                    if cleaned_example and cleaned_example not in examples:
-                        examples.append(cleaned_example)
+                    if cleaned_example:
+                        definition_examples.append(cleaned_example)
 
-    if not english_definitions:
+            labels = _wiktionary_labels(definition_item)
+            form_lemma = _extract_form_lemma(definition)
+            priority = _wiktionary_definition_priority(
+                definition,
+                labels,
+                form_lemma,
+            )
+            candidates.append(
+                (
+                    priority,
+                    candidate_order,
+                    definition,
+                    definition_examples,
+                    part_of_speech if isinstance(part_of_speech, str) else None,
+                    form_lemma,
+                )
+            )
+            candidate_order += 1
+
+    normal_candidates = [candidate for candidate in candidates if not candidate[5]]
+    selected_candidates = sorted(
+        normal_candidates,
+        key=lambda candidate: (candidate[0], candidate[1]),
+    )
+    english_definitions = [candidate[2] for candidate in selected_candidates]
+
+    for candidate in selected_candidates:
+        for example in candidate[3]:
+            if example not in examples:
+                examples.append(example)
+
+    lemma_candidates = sorted(
+        candidates,
+        key=lambda candidate: (candidate[0], candidate[1]),
+    )
+    lemma = next(
+        (
+            candidate[5]
+            for candidate in lemma_candidates
+            if candidate[5] and candidate[5] != requested_word.casefold()
+        ),
+        None,
+    )
+
+    if not english_definitions and not lemma:
         raise DictionaryWordNotFound(requested_word)
 
-    return {
+    first_candidate = selected_candidates[0] if selected_candidates else lemma_candidates[0]
+    part_of_speech = first_candidate[4]
+
+    parsed = {
         "phonetic": None,
         "part_of_speech": part_of_speech,
         "english_definitions": english_definitions,
         "examples": examples,
         "source": "wiktionary",
     }
+    if lemma:
+        parsed["lemma"] = lemma
+    return parsed
+
+
+def _wiktionary_labels(definition_item: dict[str, Any]) -> str:
+    """정의에 붙은 Wiktionary 사용역·분야 태그를 하나의 문자열로 만든다."""
+
+    labels: list[str] = []
+    for key in ("rawTags", "tags"):
+        value = definition_item.get(key, [])
+        if isinstance(value, str):
+            labels.append(value)
+        elif isinstance(value, list):
+            labels.extend(str(item) for item in value if item)
+    return " ".join(labels).casefold()
+
+
+def _extract_form_lemma(definition: str) -> str | None:
+    """활용형 정의에서 기본형 후보를 추출한다.
+
+    예를 들어 ``has``의 ``third-person ... of have``는 ``have``로 연결한다.
+    ``plural of ha``처럼 다른 의미의 활용형도 함께 올 수 있으므로 아래
+    우선순위 함수에서 일반적인 동사 활용형보다 뒤로 보낸다.
+    """
+
+    cleaned = definition.strip()
+    for pattern in _FORM_OF_PATTERNS:
+        match = pattern.search(cleaned)
+        if not match:
+            continue
+        lemma = re.sub(r"\s+", " ", match.group("lemma").strip(" '"))
+        if lemma:
+            return lemma.casefold()
+    return None
+
+
+def _wiktionary_definition_priority(
+    definition: str,
+    labels: str,
+    form_lemma: str | None,
+) -> int:
+    """학습에 적합한 일반 의미가 먼저 오도록 후보의 우선순위를 계산한다."""
+
+    searchable = f"{labels} {definition.casefold()}"
+    priority = 0
+    priority += sum(
+        100
+        for label in _NON_LEARNER_LABELS
+        if re.search(rf"\b{re.escape(label)}\b", searchable)
+    )
+    if form_lemma:
+        priority += 200
+        if re.match(r"^(?:the\s+)?(?:plural|singular)\s+of\b", definition, re.I):
+            priority += 60
+    return priority
 
 
 def _clean_wiktionary_markup(value: Any) -> str:
@@ -250,7 +386,7 @@ def _clean_wiktionary_markup(value: Any) -> str:
 
 
 class DictionaryService:
-    """Redis → Free Dictionary → Wiktionary fallback → DeepL 순서로 조회한다."""
+    """Redis와 설정된 사전 provider를 이용해 단어 뜻을 조회한다."""
 
     def __init__(self, cache: RedisJsonCache | None = None) -> None:
         """사전 서비스와 Redis 캐시를 준비한다."""
@@ -268,28 +404,30 @@ class DictionaryService:
         """단어 뜻을 조회하고 선택적으로 자막 문맥 뜻을 번역한다.
 
         Redis에는 전체 자막을 미리 넣지 않는다. 사용자가 실제로 Hover/Click한
-        단어만 ``dictionary:v2:word:<word>`` 키로 저장한다. 문맥 뜻은 문장마다
+        단어만 ``dictionary:v3:word:<word>`` 키로 저장한다. 문맥 뜻은 문장마다
         달라질 수 있으므로 문장 원문 대신 SHA-256 일부를 키에 사용한다.
         """
 
         normalized = normalize_word(word)
-        base_key = f"dictionary:v2:word:{normalized}"
+        # provider와 파싱 규칙이 바뀐 뒤에도 이전 캐시의 빈 결과를 재사용하지
+        # 않도록 단어 기본 결과의 namespace를 새 버전으로 분리한다.
+        base_key = f"dictionary:v3:word:{normalized}"
         cached_base = await self.cache.get_json(base_key)
         cache_hit = cached_base is not None
 
         if cached_base is None:
             try:
-                base_data = await self._load_from_free_dictionary(normalized)
+                base_data = await self._load_primary_dictionary(normalized)
             except (DictionaryWordNotFound, DictionaryProviderError) as exc:
-                # 무료 provider의 간헐적인 timeout으로 Hover 전체가 실패하지 않도록
-                # Wiktionary를 보조 provider로 사용한다. 기본 provider가 복구되면
-                # 다음 캐시 만료 후 다시 Free Dictionary 결과를 우선 사용한다.
+                # 기본 provider가 일시적으로 실패해도 보조 provider로 계속 조회한다.
+                # provider마다 응답 JSON 구조가 다르므로 설정 URL에 맞는 파서를
+                # 선택해야 파싱 실패가 빈 뜻 응답으로 이어지지 않는다.
                 logger.warning(
                     "dictionary_primary_provider_failed error_type=%s",
                     type(exc).__name__,
                 )
                 try:
-                    base_data = await self._load_from_wiktionary(normalized)
+                    base_data = await self._load_fallback_dictionary(normalized)
                 except DictionaryWordNotFound:
                     if isinstance(exc, DictionaryWordNotFound):
                         raise
@@ -352,10 +490,71 @@ class DictionaryService:
             cache_hit=cache_hit,
         )
 
-    async def _load_from_free_dictionary(self, word: str) -> dict[str, Any]:
+    @staticmethod
+    def _is_wiktionary_url(url: str) -> bool:
+        """설정된 사전 URL이 Wiktionary REST API인지 판별한다."""
+
+        return "wiktionary.org" in url.casefold()
+
+    async def _load_primary_dictionary(self, word: str) -> dict[str, Any]:
+        """기본 사전 URL에 맞는 provider와 응답 파서를 선택한다."""
+
+        if self._is_wiktionary_url(settings.dictionary_api_url):
+            return await self._load_wiktionary_with_lemma(
+                word,
+                base_url=settings.dictionary_api_url,
+            )
+        return await self._load_from_free_dictionary(
+            word,
+            base_url=settings.dictionary_api_url,
+        )
+
+    async def _load_fallback_dictionary(self, word: str) -> dict[str, Any]:
+        """보조 사전 URL에 맞는 provider와 응답 파서를 선택한다."""
+
+        if self._is_wiktionary_url(settings.dictionary_fallback_api_url):
+            return await self._load_wiktionary_with_lemma(
+                word,
+                base_url=settings.dictionary_fallback_api_url,
+            )
+        return await self._load_from_free_dictionary(
+            word,
+            base_url=settings.dictionary_fallback_api_url,
+        )
+
+    async def _load_wiktionary_with_lemma(
+        self,
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
+        """활용형이면 Wiktionary의 기본형 정의까지 이어서 조회한다."""
+
+        form_data = await self._load_from_wiktionary(word, base_url=base_url)
+        lemma = form_data.get("lemma")
+        if not isinstance(lemma, str) or not lemma or lemma == word:
+            form_data.pop("lemma", None)
+            return form_data
+
+        lemma_data = await self._load_from_wiktionary(lemma, base_url=base_url)
+        merged = dict(lemma_data)
+        if not merged.get("phonetic"):
+            merged["phonetic"] = form_data.get("phonetic")
+        if not merged.get("examples"):
+            merged["examples"] = form_data.get("examples", [])
+        merged["source"] = "wiktionary"
+        merged.pop("lemma", None)
+        return merged
+
+    async def _load_from_free_dictionary(
+        self,
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
         """Free Dictionary API를 호출해 영어 원문 정의를 가져온다."""
 
-        url = self._build_provider_url(settings.dictionary_api_url, word)
+        url = self._build_provider_url(base_url, word)
 
         try:
             async with httpx.AsyncClient(
@@ -379,10 +578,15 @@ class DictionaryService:
 
         return parse_free_dictionary_payload(payload, word)
 
-    async def _load_from_wiktionary(self, word: str) -> dict[str, Any]:
-        """Wiktionary REST API를 보조 provider로 호출해 영어 정의를 가져온다."""
+    async def _load_from_wiktionary(
+        self,
+        word: str,
+        *,
+        base_url: str,
+    ) -> dict[str, Any]:
+        """Wiktionary REST API를 호출해 영어 정의를 가져온다."""
 
-        url = self._build_provider_url(settings.dictionary_fallback_api_url, word)
+        url = self._build_provider_url(base_url, word)
         try:
             async with httpx.AsyncClient(
                 timeout=settings.dictionary_timeout_seconds
@@ -489,4 +693,4 @@ class DictionaryService:
         """문맥 원문을 노출하지 않는 Redis 키를 만든다."""
 
         digest = hashlib.sha256(context.encode("utf-8")).hexdigest()[:16]
-        return f"dictionary:v2:context:{word}:{digest}"
+        return f"dictionary:v3:context:{word}:{digest}"

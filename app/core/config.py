@@ -49,7 +49,7 @@ class Settings:
     dictionary_api_url: str = (
         os.getenv(
             "DICTIONARY_API_URL",
-            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+            "https://api.dictionaryapi.dev/api/v2/entries/en/{word}",
         ).strip()
         or "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
     )
