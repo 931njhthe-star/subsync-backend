@@ -1,48 +1,94 @@
 # SubSync Backend
 
-YouTube 자막 문맥을 활용하는 AI Video Tutor의 FastAPI 백엔드입니다.
+YouTube 이중 자막과 AI Video Tutor를 결합한 영어 학습 서비스 **SubSync**의 백엔드입니다.
+Chrome Extension과 Streamlit 대시보드에 REST API를 제공하며, 사용자 학습 기록·단어장·AI 대화·행동 로그를 관리합니다.
 
-## 현재 구현
+## 주요 기능
 
-- `GET /health`
-- `GET /api/v1/auth/me`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/dictionary/hover`
-- `GET /api/v1/dictionary/detail`
-- `POST /api/v1/words`
-- `GET /api/v1/words`
-- `DELETE /api/v1/words/{word_id}`
-- `POST /api/v1/tutor/ask`
-- `POST /api/v1/tutor/proactive`
-- `POST /api/v1/tutor/feedback`
-- `GET /api/v1/dashboard/overview`
-- `GET /api/v1/dashboard/usage`
-- `GET /api/v1/dashboard/api-calls`
-- Gemini/Groq provider와 네트워크 없이 동작하는 `stub` fallback
+- **인증 및 사용자 관리**: 회원가입, 로그인, JWT 기반 인증, 학습 프로필 관리
+- **영어 단어 학습**: 자막 단어 Hover 빠른 조회, Click 상세 조회, 단어장 저장 및 목록 조회
+- **Video Tutor**: 영상 자막과 재생 시점을 문맥으로 활용하는 Gemini 기반 질의응답 및 피드백 수집
+- **학습 기록**: 시청 이력, 저장 단어, 단어 클릭, Tutor 대화 이력 기록
+- **운영 및 분석**: Streamlit 기반 KPI·행동 로그·AI 응답 품질 분석
 
+## 아키텍처
 
-Tutor 대화·피드백·사용량 제한은 현재 개발용 프로세스 메모리에 저장된다. Tutor 호출의
-토큰 사용량은 `llm_usage`, HTTP 운영 로그는 `api_logs`에 기록하며, Dashboard 조회 API가
-두 테이블을 기간별로 집계해 반환한다. Supabase 설정이 없으면 Dashboard API는 빈 집계를
-반환한다.
+```text
+Chrome Extension / Streamlit Dashboard
+                │
+                │ HTTP REST API (JSON)
+                ▼
+           FastAPI Backend
+          ├── Supabase (PostgreSQL): 사용자·학습 데이터
+          ├── Redis: 세션·단어 조회 캐시
+          ├── Google Gemini: Video Tutor 응답 생성
+          └── YouTube: 영상·자막 데이터
+```
 
+## 현재 폴더 구조
 
-`SUPABASE_URL`과 `SUPABASE_SECRET_KEY`를 설정하면 API 요청의 경로, 상태 코드, 처리 시간만
-`api_logs`에 익명으로 기록한다. 요청·응답 본문과 사용자 메시지는 DB에 저장하지 않는다.
-`/api/v1/logs/event`는 현재 제공하지 않는 프론트엔드 이벤트 endpoint이므로 호출하지 않는다.
+현재 저장소에 생성된 구조입니다. 빈 `__init__.py` 패키지는 이후 기능별 구현을 위한 경계를 미리 잡아 둔 것입니다.
 
-Dashboard API의 기본 조회 기간은 최근 7일이며 `days=1~90`으로 변경할 수 있다.
-`/api/v1/dashboard/overview`는 두 테이블의 KPI와 최근 API 활동,
-`/api/v1/dashboard/usage`는 `llm_usage`의 provider/model·토큰 집계,
-`/api/v1/dashboard/api-calls`는 `api_logs`의 endpoint별
-호출량·성공률·응답 시간을 반환한다. 현재 대시보드 API는 로그인/관리자 권한 계층이 연결되기
-전인 개발용 계약이며, 운영 공개 전 Supabase 관리자 JWT dependency를 추가해야 한다.
+```text
+subsync-backend/
+├── app/
+│   ├── api/                 # HTTP API 라우터
+│   ├── cache/               # Redis 등 캐시 연동
+│   ├── core/
+│   │   └── config.py        # 환경별 설정 로드
+│   ├── db/                  # DB 연결 및 저장소 계층
+│   ├── models/              # DB 모델
+│   ├── schemas/             # Pydantic 요청·응답 모델
+│   ├── services/            # 비즈니스 로직
+│   └── main.py              # FastAPI 애플리케이션 진입점
+├── docs/
+│   ├── api_spec.md          # 프론트엔드-백엔드 API 계약
+│   ├── architecture.md      # 시스템 아키텍처
+│   ├── db_schema.sql        # Supabase PostgreSQL 스키마
+│   └── subsync-architecture-guide.md
+├── tests/
+│   └── test_health.py       # 헬스체크 테스트
+├── .python-version          # uv가 사용할 Python 버전
+├── pyproject.toml           # uv 프로젝트·의존성 설정
+└── uv.lock                  # uv가 생성·관리하는 고정 의존성 잠금 파일
+```
 
-## 기준
+## 확장 예정 구조
 
-- API 계약: FastAPI `/docs`, Postman Collection, `tests/`
-- 환경변수: `.env.example`
-- DB 생성 기준과 점검 결과: `docs/database/README.md`
+기획서의 기능을 구현하면서 아래와 같이 세분화합니다. API 경로와 요청·응답 형식은 [API 명세](docs/api_spec.md)를 기준으로 관리합니다.
+
+```text
+app/
+├── api/
+│   ├── deps.py              # 인증·DB 공통 의존성
+│   └── v1/
+│       ├── auth.py          # /auth
+│       ├── dictionary.py    # /dict/hover, /dict/detail
+│       ├── words.py         # /words
+│       ├── tutor.py         # /tutor
+│       └── logs.py          # /logs
+├── ai/
+│   ├── gemini_client.py     # Gemini API 호출 래퍼
+│   ├── context_builder.py   # 자막·시점 문맥 구성
+│   ├── prompts.py           # Tutor 프롬프트
+│   └── tutor_service.py     # AI 응답·피드백 처리
+├── cache/
+│   └── redis_client.py
+├── core/
+│   ├── config.py
+│   └── security.py          # JWT·비밀번호 해싱
+├── data/
+│   └── base_dictionary.json # 빠른 단어 조회용 정적 사전
+├── db/
+│   └── database.py          # Supabase 클라이언트
+├── models/
+├── schemas/
+└── services/
+    ├── auth_service.py
+    ├── dict_service.py      # Redis → 정적 사전 → 외부 사전 조회
+    ├── word_service.py
+    └── log_service.py
+```
 
 ## 시작하기
 
