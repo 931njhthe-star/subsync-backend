@@ -32,6 +32,12 @@ Collection을 제공한다.
 거부 예시가 있다. 전체 Collection을 Run 하면 첫 Tutor 요청이 저장한
 `conversation_id`와 `message_id`를 자동으로 이어서 사용한다.
 
+`▶ 저장 단어 — OAuth 연결 전 개발용` 폴더는 Google OAuth가 아직 연결되지 않은
+상태에서 저장 단어 API를 확인할 때 사용한다. Collection 변수 `dev_user_id`를
+Supabase `public.users`에 실제로 존재하는 UUID로 바꾼 뒤 저장·조회·삭제 요청을
+순서대로 실행한다. 이 임시 header 방식은 개발 환경에서만 동작하며, OAuth 연동 후에는
+`Authorization: Bearer <access_token>` 방식으로 교체한다.
+
 선제 질문 답변은 4번 요청의 `question_id`를 5번 요청의
 `proactive_question_id`로 전달해야 한다. 일반 Tutor 질문은 pending 선제 질문이
 있어도 채점 모드로 바뀌지 않으며, 선제 질문은 표시 후 30초가 지나면 만료된다.
@@ -44,6 +50,7 @@ Collection을 제공한다.
 
 조회 기간은 `dashboard_days` Collection 변수를 사용하며 1~90일을 지원한다. Supabase
 설정이 없는 로컬 환경에서는 정상 응답과 함께 빈 배열·0 집계가 반환된다.
+
 
 ## 인증 토큰 사용
 

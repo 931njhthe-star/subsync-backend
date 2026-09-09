@@ -2,6 +2,11 @@
 
 import pytest
 from fastapi.testclient import TestClient
+import os
+
+os.environ["LLM_PROVIDER"] = "stub"
+
+from app.main import app
 
 from app.ai.context_builder import SubtitleLine, build_tutor_context
 from app.ai.learner_profile import (
@@ -32,7 +37,7 @@ from app.ai.tutor_service import (
 )
 from app.ai.usage_tracker import InMemoryUsageTracker
 from app.main import app
-
+from app.core.config import settings
 
 client = TestClient(app)
 
@@ -518,8 +523,14 @@ def test_proactive_question_applies_cooldown_and_seen_word_guard():
     assert third.json()["reason"] == "cooldown"
 
 
+def test_proactive_answer_returns_feedback_without_question_id(monkeypatch):
+    """기존 Extension도 가장 최근 선제 질문 답을 자동 연결하는지 확인한다."""
+
 def test_explicit_proactive_question_id_returns_natural_feedback():
     """명시적인 선제 질문 답변은 구조화된 피드백과 자연스러운 reply를 반환한다."""
+
+
+    monkeypatch.setattr(settings, "llm_provider", "stub")
 
     proactive = client.post(
         "/api/v1/tutor/proactive",

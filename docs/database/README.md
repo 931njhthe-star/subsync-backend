@@ -22,7 +22,6 @@
 `docs/migrations/`에 새 migration을 추가한다.
 
 ## 현재 애플리케이션 상태
-
 현재 FastAPI는 Tutor 대화·피드백을 개발용 메모리에 기록한다. Tutor 토큰 사용량은
 `llm_usage`에, HTTP 운영 로그는 `api_logs`에 기록하며, Streamlit Dashboard API가 두
 테이블을 기간별로 읽어 KPI·provider/model·endpoint별 집계로 반환한다. Supabase 설정이

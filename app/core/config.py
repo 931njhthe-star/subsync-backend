@@ -1,9 +1,19 @@
 """애플리케이션 설정.
 
-환경변수로부터 Video Tutor 실행 설정과 외부 LLM 키를 로드한다.
+환경변수로부터 API 주소, DB 접속정보, 캐시 설정, 외부 API Key를 로드한다.
 """
 
 import os
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_FILE, override=False)
+
+# print("env_path=", ENV_FILE)
+# print("env_file_exists=", ENV_FILE.exists())
+# print("deepl_key_present=", bool(os.getenv("DEEPL_API_KEY")))
 
 
 class Settings:
@@ -19,6 +29,40 @@ class Settings:
     # 운영 지표만 남긴다.
     supabase_url: str = os.getenv("SUPABASE_URL", "").rstrip("/")
     supabase_secret_key: str = os.getenv("SUPABASE_SECRET_KEY", "")
+
+    # 사전 조회는 Redis에 요청된 단어만 저장한다. REDIS_URL이 비어 있으면
+    # Redis 없이도 외부 사전 API로 계속 동작하도록 서비스에서 처리한다.
+    redis_url: str = os.getenv("REDIS_URL", "").strip()
+    dictionary_cache_ttl_seconds: int = int(
+        os.getenv("DICTIONARY_CACHE_TTL_SECONDS", "86400") or "86400"
+    )
+    dictionary_api_url: str = (
+        os.getenv(
+            "DICTIONARY_API_URL",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+        ).strip()
+        or "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
+    )
+    dictionary_timeout_seconds: float = float(
+        os.getenv("DICTIONARY_TIMEOUT_SECONDS", "8") or "8"
+    )
+    # Free Dictionary API 장애 시 영어 Wiktionary REST API를 보조 provider로 사용한다.
+    dictionary_fallback_api_url: str = (
+        os.getenv(
+            "DICTIONARY_FALLBACK_API_URL",
+            "https://en.wiktionary.org/api/rest_v1/page/definition/{word}",
+        ).strip()
+        or "https://en.wiktionary.org/api/rest_v1/page/definition/{word}"
+    )
+    deepl_api_key: str = os.getenv("DEEPL_API_KEY", "").strip()
+    print("DEEPL_API_KEY", deepl_api_key)
+    deepl_api_base_url: str = (
+        os.getenv("DEEPL_API_BASE_URL", "https://api-free.deepl.com").strip()
+        or "https://api-free.deepl.com"
+    )
+    deepl_timeout_seconds: float = float(
+        os.getenv("DEEPL_TIMEOUT_SECONDS", "8") or "8"
+    )
     api_log_timeout_seconds: float = float(
         os.getenv("API_LOG_TIMEOUT_SECONDS", "2")
     )
