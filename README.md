@@ -9,15 +9,9 @@ LLM 사용량과 API 호출 지표를 조회할 수 있도록 Supabase 및 외�
 
 ## 구현된 기능
 
-- 인증: Supabase Auth Access Token을 검증하고 JWT의 sub를 사용자 식별자로 사용합니다.
-  현재 auth API는 사용자 확인과 로그아웃을 제공합니다.
 - 사전: Hover 빠른 조회와 Click 상세 조회를 제공합니다. Redis 캐시를 먼저 확인한 뒤
   Free Dictionary와 Wiktionary를 사용하고, 설정된 경우 DeepL 번역을 적용합니다.
-- 레거시 사전 경로: 이전 Extension이 호출하던 /api/v1/dict/hover와
-  /api/v1/dict/detail도 호환용 alias로 제공합니다. 정식 경로는 /api/v1/dictionary/*이며,
-  레거시 alias는 OpenAPI 문서에는 노출하지 않습니다.
-- 저장 단어: 단어 저장·목록·삭제 API를 제공합니다. OAuth 연결 전 개발 환경에서는
-  X-Dev-User-ID 헤더를 사용하며, ENV=production에서는 이 개발용 헤더를 거부합니다.
+- 저장 단어: 단어 저장·목록·삭제 API를 제공합니다.
 - Video Tutor: 자막 문맥을 이용한 질문, 선제 질문, 피드백, 사용량 조회 API를 제공합니다.
   LLM provider는 Gemini, Groq, stub을 지원하며 provider 장애·한도 초과 시 fallback합니다.
 - 운영 지표: LLM 사용량(llm_usage)과 API 호출 로그(api_logs)를 집계하는 Dashboard API를
@@ -33,10 +27,10 @@ Chrome Extension / Streamlit Dashboard
                 │ HTTP REST API (JSON)
                 ▼
            FastAPI Backend
-          ├── Supabase Auth/PostgreSQL: 인증·사용자·저장 단어·운영 지표
-          ├── Redis: 사전 조회 결과 캐시
-          ├── Dictionary APIs + DeepL: 단어 정의·한국어 번역
-          └── Gemini / Groq / stub: Video Tutor 응답
+                ├── Supabase Auth/PostgreSQL: 인증·사용자·저장 단어·운영 지표
+                ├── Redis: 사전 조회 결과 캐시
+                ├── Dictionary APIs + DeepL: 단어 정의·한국어 번역
+                └── Gemini / Groq / stub: Video Tutor 응답
 ```
 
 콘텐츠/API 라우터는 app/api/v1에, 요청·응답 DTO는 app/schemas에, 도메인 서비스는
