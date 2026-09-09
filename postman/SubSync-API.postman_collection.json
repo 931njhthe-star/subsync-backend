@@ -113,6 +113,60 @@
       ]
     },
     {
+      "name": "Dictionary — Hover 호환 확인",
+      "description": "배포된 Extension이 사용하는 `/dict/*` 경로와 잘못된 입력을 확인합니다.",
+      "item": [
+        {
+          "name": "Hover 뜻 조회 (Extension 호환 경로)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dict/hover?word=honest",
+            "description": "구버전 Extension의 실제 호출 경로입니다. 200과 비어 있지 않은 meanings 배열을 확인합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Hover 호환 경로가 동작한다', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.meanings).to.be.an('array').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Hover 잘못된 검색어 거부",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/dict/hover?word=",
+            "description": "검색어가 없으면 422로 거부합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('빈 검색어를 거부한다', function () {",
+                  "  pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
       "name":"▶ 저장 단어 — OAuth 연결 전 개발용",
       "description":"Google OAuth 연결 전 임시 테스트용입니다. dev_user_id를 public.users에 실제로 존재하는 UUID로 바꾼 뒤 실행하세요.",
       "item":[

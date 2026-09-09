@@ -23,7 +23,10 @@ class DictionaryHoverResponse(BaseModel):
         ),
     )
     source: str = Field(
-        description="응답 출처: redis, free_dictionary 또는 wiktionary"
+        description=(
+            "응답 출처: redis, free_dictionary, wiktionary 또는 "
+            "deepl_fallback"
+        )
     )
     cache_hit: bool = Field(description="기본 단어 캐시 적중 여부")
 
@@ -61,6 +64,9 @@ class DictionaryDetailResponse(BaseModel):
         description="인증·saved_words 연동 전에는 null",
     )
     source: str = Field(
-        description="응답 출처: redis, free_dictionary 또는 wiktionary"
+        description=(
+            "응답 출처: redis, free_dictionary, wiktionary 또는 "
+            "deepl_fallback"
+        )
     )
     cache_hit: bool = Field(description="기본 단어 캐시 적중 여부")

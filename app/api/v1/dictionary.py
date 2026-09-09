@@ -18,6 +18,9 @@ from app.services.dict_service import (
 
 
 router = APIRouter(prefix="/dictionary", tags=["Dictionary"])
+# 병합 전 Extension이 사용하던 `/dict/*` 경로도 잠시 유지한다. 응답 모델과
+# dependency는 정식 `/dictionary/*` 라우트와 공유해 두 계약이 갈라지지 않게 한다.
+legacy_router = APIRouter(prefix="/dict", tags=["Dictionary"])
 
 
 @lru_cache(maxsize=1)
@@ -51,6 +54,11 @@ async def _lookup_or_http_error(
 
 
 @router.get("/hover", response_model=DictionaryHoverResponse)
+@legacy_router.get(
+    "/hover",
+    response_model=DictionaryHoverResponse,
+    include_in_schema=False,
+)
 async def get_hover_meaning(
     word: Annotated[
         str,
@@ -82,6 +90,11 @@ async def get_hover_meaning(
 
 
 @router.get("/detail", response_model=DictionaryDetailResponse)
+@legacy_router.get(
+    "/detail",
+    response_model=DictionaryDetailResponse,
+    include_in_schema=False,
+)
 async def get_dictionary_detail(
     word: Annotated[
         str,

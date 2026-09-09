@@ -376,6 +376,71 @@ def test_dictionary_service_selects_contextual_meaning_from_translated_candidate
     assert result.context_meaning == "솔직한; 거침없는"
 
 
+def test_dictionary_service_uses_translation_when_dictionary_providers_fail(
+    monkeypatch,
+):
+    """두 사전 provider가 실패해도 단어 자체 번역으로 Hover 뜻을 유지한다."""
+
+    service = DictionaryService(cache=MemoryCache())
+
+    async def primary_provider_error(word: str) -> dict[str, Any]:
+        raise DictionaryProviderError("primary unavailable")
+
+    async def fallback_provider_error(word: str) -> dict[str, Any]:
+        raise DictionaryProviderError("fallback unavailable")
+
+    async def fake_translate(
+        definitions: list[str],
+        context: str | None,
+    ) -> tuple[str, ...]:
+        assert definitions == ["honest"]
+        assert context is None
+        return ("정직한",)
+
+    monkeypatch.setattr(service, "_load_primary_dictionary", primary_provider_error)
+    monkeypatch.setattr(service, "_load_fallback_dictionary", fallback_provider_error)
+    monkeypatch.setattr(service, "_translate_definitions", fake_translate)
+
+    result = asyncio.run(service.lookup("honest"))
+
+    assert result.source == "deepl_fallback"
+    assert result.definition_translations == ("정직한",)
+    assert result.english_definitions == ()
+    assert result.cache_hit is False
+
+
+def test_dictionary_translation_fallback_does_not_cache_context_as_base_word(
+    monkeypatch,
+):
+    """문맥이 섞인 fallback 뜻은 다음 자막의 단어 조회에 재사용하지 않는다."""
+
+    cache = MemoryCache()
+    service = DictionaryService(cache=cache)
+    translate_calls: list[tuple[list[str], str | None]] = []
+
+    async def provider_error(word: str) -> dict[str, Any]:
+        raise DictionaryProviderError("provider unavailable")
+
+    async def fake_translate(
+        definitions: list[str],
+        context: str | None,
+    ) -> tuple[str, ...]:
+        translate_calls.append((definitions, context))
+        return ("솔직한",)
+
+    monkeypatch.setattr(service, "_load_primary_dictionary", provider_error)
+    monkeypatch.setattr(service, "_load_fallback_dictionary", provider_error)
+    monkeypatch.setattr(service, "_translate_definitions", fake_translate)
+
+    result = asyncio.run(
+        service.lookup("honest", context="Be honest with yourself.")
+    )
+
+    assert result.context_meaning == "솔직한"
+    assert translate_calls == [(["honest"], "Be honest with yourself.")]
+    assert cache.values == {}
+
+
 class FakeDictionaryService:
     """라우터 테스트에서 외부 API 대신 고정 응답을 반환한다."""
 
@@ -416,6 +481,20 @@ def test_dictionary_routes_return_hover_and_detail_contract():
                 "context": "You have to be honest with yourself.",
             },
         )
+        legacy_hover_response = client.get(
+            "/api/v1/dict/hover",
+            params={
+                "word": "honest",
+                "context": "You have to be honest with yourself.",
+            },
+        )
+        legacy_detail_response = client.get(
+            "/api/v1/dict/detail",
+            params={
+                "word": "honest",
+                "context": "You have to be honest with yourself.",
+            },
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -436,6 +515,15 @@ def test_dictionary_routes_return_hover_and_detail_contract():
         "정직한",
     ]
     assert detail_response.json()["is_saved"] is None
+    assert legacy_hover_response.status_code == 200
+    assert legacy_hover_response.json()["meanings"] == [
+        "현재 문장에서는 솔직한 의미입니다."
+    ]
+    assert legacy_detail_response.status_code == 200
+    assert legacy_detail_response.json()["definitions"] == [
+        "현재 문장에서는 솔직한 의미입니다.",
+        "정직한",
+    ]
 
 
 def test_dictionary_route_rejects_blank_word():

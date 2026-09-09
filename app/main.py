@@ -14,7 +14,10 @@ from starlette.responses import Response
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.dashboard import router as dashboard_router
-from app.api.v1.dictionary import router as dictionary_router
+from app.api.v1.dictionary import (
+    legacy_router as legacy_dictionary_router,
+    router as dictionary_router,
+)
 from app.api.v1.tutor import router as tutor_router
 from app.api.v1.words import router as words_router
 from app.core.config import settings
@@ -115,6 +118,8 @@ async def write_api_log(request: Request, call_next) -> Response:
 # 버전이 필요한 기능은 `/api/v1` 아래에 모아 이후 하위 호환성을 유지한다.
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(dictionary_router, prefix="/api/v1")
+# 구버전 Extension이 호출하는 `/api/v1/dict/*`도 하위 호환용으로 제공한다.
+app.include_router(legacy_dictionary_router, prefix="/api/v1")
 app.include_router(tutor_router, prefix="/api/v1")
 app.include_router(words_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")

@@ -386,7 +386,7 @@ def _clean_wiktionary_markup(value: Any) -> str:
 
 
 class DictionaryService:
-    """Redis와 설정된 사전 provider를 이용해 단어 뜻을 조회한다."""
+    """Redis·사전 provider·번역 fallback으로 단어 뜻을 조회한다."""
 
     def __init__(self, cache: RedisJsonCache | None = None) -> None:
         """사전 서비스와 Redis 캐시를 준비한다."""
@@ -405,7 +405,9 @@ class DictionaryService:
 
         Redis에는 전체 자막을 미리 넣지 않는다. 사용자가 실제로 Hover/Click한
         단어만 ``dictionary:v3:word:<word>`` 키로 저장한다. 문맥 뜻은 문장마다
-        달라질 수 있으므로 문장 원문 대신 SHA-256 일부를 키에 사용한다.
+        달라질 수 있으므로 문장 원문 대신 SHA-256 일부를 키에 사용한다. 두 사전
+        provider가 모두 일시적으로 실패하면 DeepL로 단어 자체를 번역해 Hover가
+        503 대신 최소한의 뜻을 표시할 수 있게 한다.
         """
 
         normalized = normalize_word(word)
@@ -414,6 +416,8 @@ class DictionaryService:
         base_key = f"dictionary:v3:word:{normalized}"
         cached_base = await self.cache.get_json(base_key)
         cache_hit = cached_base is not None
+        translation_fallback_used = False
+        cache_base_result = True
 
         if cached_base is None:
             try:
@@ -435,42 +439,67 @@ class DictionaryService:
                         "사전 외부 서비스를 잠시 사용할 수 없습니다."
                     ) from exc
                 except DictionaryProviderError as fallback_exc:
-                    raise DictionaryProviderError(
-                        "사전 외부 서비스를 잠시 사용할 수 없습니다."
-                    ) from fallback_exc
+                    if not isinstance(exc, DictionaryProviderError):
+                        raise DictionaryProviderError(
+                            "사전 외부 서비스를 잠시 사용할 수 없습니다."
+                        ) from fallback_exc
+
+                    # 사전 provider가 동시에 장애 나도 Hover는 영상 학습 흐름을
+                    # 끊지 않아야 한다. 문맥이 있으면 문맥을 DeepL에 함께 보내고,
+                    # 없으면 단어 자체를 번역해 최소 응답을 구성한다.
+                    base_data = await self._load_translation_fallback(
+                        normalized,
+                        context=(
+                            context.strip()
+                            if context and context.strip()
+                            else None
+                        ),
+                    )
+                    translation_fallback_used = True
+                    # 문맥을 포함한 번역은 단어별 기본 캐시에 저장하면 다음
+                    # 자막에서 잘못 재사용될 수 있으므로 해당 요청에서만 사용한다.
+                    cache_base_result = not bool(context and context.strip())
             # 기본 번역은 문맥 없이 저장해 특정 자막 문장이 다른 조회 결과를
             # 오염시키지 않게 한다. 문맥 번역은 아래에서 별도의 키로 처리한다.
-            base_data["definition_translations"] = list(
-                await self._translate_definitions(
-                    base_data["english_definitions"],
-                    context=None,
+            if not base_data.get("definition_translations"):
+                base_data["definition_translations"] = list(
+                    await self._translate_definitions(
+                        base_data["english_definitions"],
+                        context=None,
+                    )
                 )
-            )
-            await self.cache.set_json(base_key, base_data)
+            if cache_base_result:
+                await self.cache.set_json(base_key, base_data)
         else:
             base_data = cached_base
 
         context_meaning: str | None = None
         if context and context.strip():
-            context_key = self._context_cache_key(normalized, context)
-            cached_context = await self.cache.get_json(context_key)
-            if cached_context is not None:
-                context_meaning = cached_context.get("context_meaning")
+            if translation_fallback_used:
+                # 위에서 이미 자막 문맥을 반영한 번역을 만들었으므로 DeepL을
+                # 같은 요청에서 다시 호출하지 않는다.
+                translations = base_data.get("definition_translations", [])
+                context_meaning = translations[0] if translations else None
             else:
-                context_meaning = await self._translate_context(
-                    normalized,
-                    context.strip(),
-                )
-                if context_meaning:
-                    context_meaning = _select_context_meaning(
-                        context_meaning,
-                        base_data.get("definition_translations", []),
+                context_key = self._context_cache_key(normalized, context)
+                cached_context = await self.cache.get_json(context_key)
+                if cached_context is not None:
+                    context_meaning = cached_context.get("context_meaning")
+                else:
+                    context_meaning = await self._translate_context(
+                        normalized,
+                        context.strip(),
                     )
-                if context_meaning:
-                    await self.cache.set_json(
-                        context_key,
-                        {"context_meaning": context_meaning},
-                    )
+                    if context_meaning:
+                        context_meaning = _select_context_meaning(
+                            context_meaning,
+                            base_data.get("definition_translations", []),
+                        )
+                    if context_meaning:
+                        await self.cache.set_json(
+                            context_key,
+                            {"context_meaning": context_meaning},
+                        )
 
         return DictionaryResult(
             word=word.strip(),
@@ -489,6 +518,35 @@ class DictionaryService:
             ),
             cache_hit=cache_hit,
         )
+
+    async def _load_translation_fallback(
+        self,
+        word: str,
+        *,
+        context: str | None,
+    ) -> dict[str, Any]:
+        """사전 provider 장애 시 번역 API로 최소 사전 결과를 만든다.
+
+        이 결과는 발음·품사·영어 정의를 포함하지 않을 수 있지만, Hover에 필요한
+        한국어 뜻은 유지한다. 번역 provider마저 실패하면 원래의 503 오류를
+        호출자에게 전달해 빈 성공 응답으로 위장하지 않는다.
+        """
+
+        translations = await self._translate_definitions([word], context=context)
+        if not translations:
+            raise DictionaryProviderError(
+                "사전과 번역 외부 서비스를 모두 사용할 수 없습니다."
+            )
+
+        logger.warning("dictionary_translation_fallback_used")
+        return {
+            "phonetic": None,
+            "part_of_speech": None,
+            "english_definitions": [],
+            "definition_translations": list(translations),
+            "examples": [],
+            "source": "deepl_fallback",
+        }
 
     @staticmethod
     def _is_wiktionary_url(url: str) -> bool:

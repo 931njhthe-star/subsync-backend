@@ -8,6 +8,9 @@ Collection을 제공한다.
 - `SubSync-API.postman_collection.json`: Tutor와 Dashboard 조회 요청 및 자동 테스트 스크립트
 - `SubSync-Local.postman_environment.json`: 선택 가능한 로컬 서버 주소 환경
 
+`Dictionary — Hover 호환 확인` 폴더에서는 Extension이 실제로 사용하는
+`/api/v1/dict/hover` 경로와 빈 검색어 422 응답을 확인할 수 있습니다.
+
 ## 실행 방법
 
 1. FastAPI 서버를 실행한다.
