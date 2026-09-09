@@ -162,7 +162,7 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
         calls["deepl"] += 1
         return ("정직한",)
 
-    monkeypatch.setattr(service, "_load_from_wiktionary", fake_dictionary)
+    monkeypatch.setattr(service, "_load_from_free_dictionary", fake_dictionary)
     monkeypatch.setattr(service, "_translate_definitions", fake_translate)
 
     first = asyncio.run(service.lookup("honest"))
@@ -171,18 +171,21 @@ def test_dictionary_service_caches_only_the_queried_word(monkeypatch):
     assert first.cache_hit is False
     assert second.cache_hit is True
     assert calls == {"dictionary": 1, "deepl": 1}
-    assert list(cache.values) == ["dictionary:v1:word:honest"]
+    assert list(cache.values) == ["dictionary:v2:word:honest"]
 
 
 def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypatch):
     """Free Dictionary timeout 때 보조 provider 결과로 조회를 계속한다."""
 
     service = DictionaryService(cache=MemoryCache())
+    provider_calls: list[str] = []
 
     async def primary_provider_error(word: str) -> dict[str, Any]:
+        provider_calls.append("free_dictionary")
         raise DictionaryProviderError("timeout")
 
     async def fallback_dictionary(word: str) -> dict[str, Any]:
+        provider_calls.append("wiktionary")
         return {
             "phonetic": None,
             "part_of_speech": "Adjective",
@@ -209,6 +212,7 @@ def test_dictionary_service_uses_wiktionary_when_primary_provider_fails(monkeypa
 
     assert result.source == "wiktionary"
     assert result.definition_translations == ("정직한",)
+    assert provider_calls == ["free_dictionary", "wiktionary"]
 
 
 def test_dictionary_service_selects_contextual_meaning_from_translated_candidates(
@@ -299,6 +303,7 @@ def test_dictionary_routes_return_hover_and_detail_contract():
     assert detail_response.json()["context_meaning"] == (
         "현재 문장에서는 솔직한 의미입니다."
     )
+    assert detail_response.json()["meanings"] == ["정직한", "솔직한"]
     assert detail_response.json()["is_saved"] is None
 
 

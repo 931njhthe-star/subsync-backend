@@ -37,6 +37,13 @@ class DictionaryDetailResponse(BaseModel):
     definitions: list[str] = Field(
         description="중복을 줄인 한국어 정의 최대 5개"
     )
+    meanings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "프론트엔드 상세 팝업 호환용 한국어 뜻 목록. "
+            "definitions와 같은 값을 제공함"
+        ),
+    )
     english_definitions: list[str] = Field(
         description="중복을 줄인 영어 정의 최대 5개"
     )

@@ -114,6 +114,9 @@ async def get_dictionary_detail(
         phonetic=result.phonetic,
         part_of_speech=result.part_of_speech,
         definitions=definitions,
+        # 기존 Extension 상세 팝업은 meanings를 사용하므로 definitions와
+        # 동일한 번역 목록을 호환 필드로 함께 반환한다.
+        meanings=definitions,
         english_definitions=english_definitions,
         context_meaning=result.context_meaning,
         examples=list(result.examples),

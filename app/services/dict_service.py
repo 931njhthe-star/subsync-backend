@@ -250,7 +250,7 @@ def _clean_wiktionary_markup(value: Any) -> str:
 
 
 class DictionaryService:
-    """Redis → Free Dictionary → DeepL 순서로 단어 뜻을 조회한다."""
+    """Redis → Free Dictionary → Wiktionary fallback → DeepL 순서로 조회한다."""
 
     def __init__(self, cache: RedisJsonCache | None = None) -> None:
         """사전 서비스와 Redis 캐시를 준비한다."""
@@ -268,18 +268,18 @@ class DictionaryService:
         """단어 뜻을 조회하고 선택적으로 자막 문맥 뜻을 번역한다.
 
         Redis에는 전체 자막을 미리 넣지 않는다. 사용자가 실제로 Hover/Click한
-        단어만 ``dictionary:v1:word:<word>`` 키로 저장한다. 문맥 뜻은 문장마다
+        단어만 ``dictionary:v2:word:<word>`` 키로 저장한다. 문맥 뜻은 문장마다
         달라질 수 있으므로 문장 원문 대신 SHA-256 일부를 키에 사용한다.
         """
 
         normalized = normalize_word(word)
-        base_key = f"dictionary:v1:word:{normalized}"
+        base_key = f"dictionary:v2:word:{normalized}"
         cached_base = await self.cache.get_json(base_key)
         cache_hit = cached_base is not None
 
         if cached_base is None:
             try:
-                base_data = await self._load_from_wiktionary(normalized)
+                base_data = await self._load_from_free_dictionary(normalized)
             except (DictionaryWordNotFound, DictionaryProviderError) as exc:
                 # 무료 provider의 간헐적인 timeout으로 Hover 전체가 실패하지 않도록
                 # Wiktionary를 보조 provider로 사용한다. 기본 provider가 복구되면
@@ -382,7 +382,7 @@ class DictionaryService:
     async def _load_from_wiktionary(self, word: str) -> dict[str, Any]:
         """Wiktionary REST API를 보조 provider로 호출해 영어 정의를 가져온다."""
 
-        url = self._build_provider_url(settings.dictionary_api_url, word)
+        url = self._build_provider_url(settings.dictionary_fallback_api_url, word)
         try:
             async with httpx.AsyncClient(
                 timeout=settings.dictionary_timeout_seconds
