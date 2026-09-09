@@ -100,11 +100,17 @@ async def get_dictionary_detail(
     """
 
     result = await _lookup_or_http_error(service, word, context)
+    # 일부 확장 프로그램 버전은 별도의 context_meaning 필드보다 definitions만
+    # 렌더링한다. 문맥 뜻을 목록의 첫 항목으로 함께 넣어 두 버전이 같은 상세
+    # 정보를 보여주도록 한다.
+    definition_candidates: list[str] = []
+    if result.context_meaning:
+        definition_candidates.append(result.context_meaning)
+    definition_candidates.extend(
+        result.definition_translations or result.english_definitions
+    )
     definitions = list(
-        select_distinct_meanings(
-            result.definition_translations or result.english_definitions,
-            max_count=5,
-        )
+        select_distinct_meanings(definition_candidates, max_count=5)
     )
     english_definitions = list(
         select_distinct_meanings(result.english_definitions, max_count=5)

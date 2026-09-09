@@ -424,11 +424,17 @@ def test_dictionary_routes_return_hover_and_detail_contract():
         "현재 문장에서는 솔직한 의미입니다."
     ]
     assert detail_response.status_code == 200
-    assert detail_response.json()["definitions"] == ["정직한", "솔직한"]
+    assert detail_response.json()["definitions"] == [
+        "현재 문장에서는 솔직한 의미입니다.",
+        "정직한",
+    ]
     assert detail_response.json()["context_meaning"] == (
         "현재 문장에서는 솔직한 의미입니다."
     )
-    assert detail_response.json()["meanings"] == ["정직한", "솔직한"]
+    assert detail_response.json()["meanings"] == [
+        "현재 문장에서는 솔직한 의미입니다.",
+        "정직한",
+    ]
     assert detail_response.json()["is_saved"] is None
 
 
