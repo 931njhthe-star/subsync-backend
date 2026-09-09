@@ -118,6 +118,7 @@ class LLMUsageRepository:
         self,
         *,
         since: datetime,
+        until: datetime | None = None,
         limit: int = 10_000,
     ) -> list[dict[str, object]]:
         """대시보드 집계에 필요한 기간 내 ``llm_usage`` 행을 조회한다.
@@ -137,27 +138,43 @@ class LLMUsageRepository:
         if not self.is_configured:
             return []
 
-        safe_limit = min(max(limit, 1), 10_000)
-        params = {
-            "select": (
-                "provider,model_name,input_tokens,output_tokens,total_tokens,"
-                "used_at,user_id"
-            ),
-            "used_at": f"gte.{since.astimezone(timezone.utc).isoformat()}",
-            "order": "used_at.desc",
-            "limit": str(safe_limit),
-        }
+        safe_limit = min(max(limit, 1), 50_000)
+        page_size = min(safe_limit, 1_000)
+        selected_columns = (
+            "id,provider,model_name,input_tokens,output_tokens,total_tokens,"
+            "used_at,user_id,finish_reason,provider_latency"
+        )
+        rows: list[dict[str, object]] = []
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.get(
-                f"{self._url}/rest/v1/llm_usage",
-                headers=self._headers(),
-                params=params,
-            )
-        response.raise_for_status()
-        rows = response.json()
-        if not isinstance(rows, list):
-            raise ValueError("Supabase llm_usage 응답 형식이 올바르지 않습니다.")
-        return [row for row in rows if isinstance(row, dict)]
+            offset = 0
+            while len(rows) < safe_limit:
+                current_limit = min(page_size, safe_limit - len(rows))
+                params: list[tuple[str, str]] = [
+                    ("select", selected_columns),
+                    ("used_at", f"gte.{since.astimezone(timezone.utc).isoformat()}"),
+                    ("order", "used_at.desc"),
+                    ("limit", str(current_limit)),
+                    ("offset", str(offset)),
+                ]
+                if until is not None:
+                    params.append(
+                        ("used_at", f"lt.{until.astimezone(timezone.utc).isoformat()}")
+                    )
+                response = await client.get(
+                    f"{self._url}/rest/v1/llm_usage",
+                    headers=self._headers(),
+                    params=params,
+                )
+                response.raise_for_status()
+                page = response.json()
+                if not isinstance(page, list):
+                    raise ValueError("Supabase llm_usage 응답 형식이 올바르지 않습니다.")
+                valid_page = [row for row in page if isinstance(row, dict)]
+                rows.extend(valid_page)
+                if len(valid_page) < current_limit:
+                    break
+                offset += len(valid_page)
+        return rows[:safe_limit]
 
 
 __all__ = ["LLMUsageEntry", "LLMUsageRepository", "LLMUsageSummary"]

@@ -44,12 +44,15 @@ Supabase `public.users`에 실제로 존재하는 UUID로 바꾼 뒤 저장·조
 
 `Dashboard — 운영 지표 조회` 폴더에는 Streamlit 화면에 연결할 다음 조회 API가 있다.
 
-1. `GET /api/v1/dashboard/overview` — 두 테이블의 KPI와 최근 API 활동
-2. `GET /api/v1/dashboard/usage` — `llm_usage`의 토큰·provider/model·일별 집계
-3. `GET /api/v1/dashboard/api-calls` — `api_logs`의 endpoint·성공률·latency 집계
+1. `GET /api/v1/dashboard/overview` — KPI·일별 AI 사용량·최근 AI/API 활동·사용자 목록
+2. `GET /api/v1/dashboard/usage` — 토큰·provider/model·오류율·P95·상세 요청 내역
+3. `GET /api/v1/dashboard/api-calls` — endpoint·성공률·P95·전체 호출·상태 코드 집계
 
-조회 기간은 `dashboard_days` Collection 변수를 사용하며 1~90일을 지원한다. Supabase
-설정이 없는 로컬 환경에서는 정상 응답과 함께 빈 배열·0 집계가 반환된다.
+기본 요청은 `dashboard_days` Collection 변수를 사용하며 1~90일을 지원한다.
+Streamlit처럼 달력의 정확한 날짜를 조회할 때는 `from_date=YYYY-MM-DD`와
+`to_date=YYYY-MM-DD`를 함께 사용한다. `user_id`, `model_name`, `api_name`을
+추가하면 해당 필터가 적용된다. Supabase 설정이 없는 로컬 환경에서는 정상 응답과
+함께 빈 배열·0 집계가 반환된다.
 
 
 ## 인증 토큰 사용

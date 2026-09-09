@@ -1,11 +1,13 @@
 """Streamlit 관리자 대시보드 조회 API의 집계 계약을 검증한다."""
 
 from fastapi.testclient import TestClient
+import pytest
 
 import app.main as main_module
 from app.api.v1.dashboard import (
     get_dashboard_api_log_repository,
     get_dashboard_llm_usage_repository,
+    get_dashboard_user_repository,
 )
 
 
@@ -75,6 +77,26 @@ class FakeApiLogRepository:
         return API_ROWS
 
 
+class FakeUserRepository:
+    """대시보드 테스트에서 사용자 디렉터리 조회를 격리하는 fake repository."""
+
+    is_configured = True
+
+    async def list_directory(self, *, limit):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _override_dashboard_user_repository():
+    """실제 환경변수나 Supabase에 의존하지 않도록 사용자 조회를 고정한다."""
+
+    main_module.app.dependency_overrides[get_dashboard_user_repository] = (
+        lambda: FakeUserRepository()
+    )
+    yield
+    main_module.app.dependency_overrides.pop(get_dashboard_user_repository, None)
+
+
 def _override_dashboard_repositories() -> None:
     """세 대시보드 endpoint에 공통 fixture repository를 주입한다."""
 
@@ -107,6 +129,7 @@ def test_dashboard_overview_combines_two_tables_into_home_kpis():
     assert response.status_code == 200
     body = response.json()
     assert body["tracked_user_count"] == 2
+    assert body["registered_user_count"] == 0
     assert body["ai_call_count"] == 2
     assert body["api_request_count"] == 3
     assert body["total_tokens"] == 210
@@ -137,6 +160,10 @@ def test_dashboard_usage_groups_provider_and_daily_token_usage():
         "output_tokens": 60,
         "total_tokens": 210,
         "average_tokens_per_request": 105.0,
+        "error_count": 0,
+        "error_rate": None,
+        "average_latency_ms": None,
+        "p95_latency_ms": None,
     }
     assert body["providers"][0]["provider"] == "gemini"
     assert body["providers"][0]["token_share"] == 0.6667

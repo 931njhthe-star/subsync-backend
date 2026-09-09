@@ -121,6 +121,40 @@ class UserRepository:
             last_login_at=str(first.get("last_login_at") or ""),
         )
 
+    async def list_directory(self, *, limit: int = 50_000) -> list[dict[str, object]]:
+        """관리자 대시보드에서 사용할 사용자 ID·이메일 목록을 조회한다."""
+
+        if not self.is_configured:
+            return []
+
+        safe_limit = min(max(limit, 1), 50_000)
+        page_size = min(safe_limit, 1_000)
+        rows: list[dict[str, object]] = []
+        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+            offset = 0
+            while len(rows) < safe_limit:
+                current_limit = min(page_size, safe_limit - len(rows))
+                response = await client.get(
+                    f"{self._url}/rest/v1/users",
+                    headers=self._headers(prefer="return=representation"),
+                    params={
+                        "select": "id,email,google_account_id,created_at,last_login_at",
+                        "order": "id.asc",
+                        "limit": str(current_limit),
+                        "offset": str(offset),
+                    },
+                )
+                response.raise_for_status()
+                page = response.json()
+                if not isinstance(page, list):
+                    raise ValueError("Supabase users 응답 형식이 올바르지 않습니다.")
+                valid_page = [row for row in page if isinstance(row, dict)]
+                rows.extend(valid_page)
+                if len(valid_page) < current_limit:
+                    break
+                offset += len(valid_page)
+        return rows[:safe_limit]
+
 
 def _optional_text(value: object) -> str | None:
     if value is None or value == "":

@@ -12,9 +12,9 @@
     {"key":"conversation_id","value":"","type":"string"},
     {"key":"message_id","value":"","type":"string"},
     {"key":"proactive_question_id","value":"","type":"string"},
-    {"key":"access_token","value":"","type":"string"}
+    {"key":"access_token","value":"","type":"string"},
     {"key":"dev_user_id","value":"00000000-0000-0000-0000-000000000000","type":"string"},
-    {"key":"saved_word_id","value":"","type":"string"}
+    {"key":"saved_word_id","value":"","type":"string"},
     {"key":"dashboard_days","value":"7","type":"string"}
 
   ],
@@ -133,9 +133,12 @@
           "request":{"method":"DELETE","header":[{"key":"X-Dev-User-ID","value":"{{dev_user_id}}"}],"url":"{{base_url}}/api/v1/words/{{saved_word_id}}","description":"저장 단어 ID를 기준으로 개발 사용자의 단어를 삭제합니다."},
           "event":[{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('저장 단어가 삭제된다', function () {","  pm.response.to.have.status(204);","});"]}}],
           "response":[]
-
+        }
+      ]
+    },
+    {
       "name": "Dashboard — 운영 지표 조회",
-      "description": "Streamlit Dashboard에서 사용할 llm_usage·api_logs 집계 API입니다. Supabase가 설정되지 않은 로컬 환경에서는 빈 집계가 반환됩니다.",
+      "description": "기존 Streamlit 화면을 유지하면서 FastAPI가 Supabase의 llm_usage·api_logs를 집계해 전달합니다. 날짜·사용자·모델·endpoint 필터와 상세 내역·상태 코드 집계를 제공합니다.",
       "item": [
         {
           "name": "7. Dashboard Home 요약",
@@ -143,9 +146,9 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10",
-            "description": "두 테이블의 KPI, 일별 AI 사용량, 최근 API 활동을 조회합니다."
+            "description": "기존 KPI·일별 AI 사용량·최근 API 활동과 최근 AI 활동·사용자 표시값을 조회합니다. 정확한 날짜는 from_date/to_date를 함께 사용합니다."
           },
-          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Dashboard Home 요약을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('tracked_user_count');","  pm.expect(body).to.have.property('daily_ai_usage');","  pm.expect(body.recent_activity).to.be.an('array');","});"]}}],
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('Dashboard Home 요약을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body).to.have.property('tracked_user_count');","  pm.expect(body).to.have.property('registered_user_count');","  pm.expect(body).to.have.property('daily_ai_usage');","  pm.expect(body.recent_activity).to.be.an('array');","  pm.expect(body.recent_ai_activity).to.be.an('array');","  pm.expect(body.users).to.be.an('array');","});"]}}],
           "response": []
         },
         {
@@ -154,9 +157,9 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/api/v1/dashboard/usage?days={{dashboard_days}}",
-            "description": "llm_usage의 토큰 합계, provider/model별 사용량, 일별 사용량을 조회합니다."
+            "description": "llm_usage의 토큰·provider/model·일별 집계와 오류율·P95·상세 요청 내역을 조회합니다."
           },
-          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('AI 사용량을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('total_tokens');","  pm.expect(body.providers).to.be.an('array');","  pm.expect(body.daily_usage).to.be.an('array');","});"]}}],
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('AI 사용량을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('total_tokens');","  pm.expect(body.summary).to.have.property('error_rate');","  pm.expect(body.summary).to.have.property('p95_latency_ms');","  pm.expect(body.providers).to.be.an('array');","  pm.expect(body.daily_usage).to.be.an('array');","  pm.expect(body.details).to.be.an('array');","});"]}}],
           "response": []
         },
         {
@@ -165,9 +168,9 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/api/v1/dashboard/api-calls?days={{dashboard_days}}&recent_limit=10",
-            "description": "api_logs의 endpoint별 호출량, 성공률, latency, 최근 상태 코드를 조회합니다."
+            "description": "api_logs의 endpoint별 호출량·성공률·P95와 전체 호출 상세·HTTP 상태 코드 집계를 조회합니다."
           },
-          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('API 호출 현황을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('success_rate');","  pm.expect(body.endpoints).to.be.an('array');","  pm.expect(body.recent_calls).to.be.an('array');","});"]}}],
+          "event": [{"listen":"test","script":{"type":"text/javascript","exec":["pm.test('API 호출 현황을 받는다', function () {","  pm.response.to.have.status(200);","  const body = pm.response.json();","  pm.expect(body.summary).to.have.property('success_rate');","  pm.expect(body.summary).to.have.property('p95_response_time_ms');","  pm.expect(body.endpoints).to.be.an('array');","  pm.expect(body.recent_calls).to.be.an('array');","  pm.expect(body.all_calls).to.be.an('array');","  pm.expect(body.status_codes).to.be.an('array');","});"]}}],
           "response": []
         },
         {

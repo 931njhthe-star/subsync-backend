@@ -1,5 +1,5 @@
 $kind: http-request
-description: 지원 범위(1~90일)를 벗어난 기간은 422로 거부합니다.
+description: 지원 범위(1~90일)를 벗어난 기간과 잘못된 정확한 날짜 범위는 422로 거부합니다.
 url: "{{base_url}}/api/v1/dashboard/usage?days=0"
 method: GET
 queryParams:

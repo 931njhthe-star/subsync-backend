@@ -29,6 +29,7 @@ Chrome Extension / Streamlit Dashboard
 
 현재 저장소에 생성된 구조입니다. 빈 `__init__.py` 패키지는 이후 기능별 구현을 위한 경계를 미리 잡아 둔 것입니다.
 
+<<<<<<< Updated upstream
 ```text
 subsync-backend/
 ├── app/
@@ -52,6 +53,24 @@ subsync-backend/
 ├── pyproject.toml           # uv 프로젝트·의존성 설정
 └── uv.lock                  # uv가 생성·관리하는 고정 의존성 잠금 파일
 ```
+=======
+Dashboard API의 기본 조회 기간은 최근 7일이며 `days=1~90`으로 변경할 수 있다.
+Streamlit에서 선택한 날짜를 그대로 조회하려면 `from_date`와 `to_date`를 함께 보내며,
+두 날짜 모두 포함되고 최대 90일까지 선택할 수 있다. `user_id`, `model_name`,
+`api_name` 필터도 각 화면의 지원 범위에 맞춰 사용할 수 있다.
+
+`/api/v1/dashboard/overview`는 기존 두 테이블의 KPI·일별 AI 사용량·최근 API 활동을
+유지하면서 최근 AI 활동과 사용자 표시용 목록을 추가로 반환한다.
+`/api/v1/dashboard/usage`는 `llm_usage`의 provider/model·토큰 집계와 함께 오류율,
+평균·P95 provider latency, 선택 기간의 상세 요청 내역을 반환한다.
+`/api/v1/dashboard/api-calls`는 `api_logs`의 endpoint별 호출량·성공률·평균·P95 응답시간,
+선택 기간 전체 호출 내역과 상태 코드별 집계를 반환한다. 따라서 Streamlit은 기존 카드,
+그래프, 필터, 상세 표, LLM 운영 요약을 유지한 채 이 세 응답을 하나의 화면 데이터로
+조합한다.
+
+현재 대시보드 API는 로그인/관리자 권한 계층이 연결되기 전인 개발용 계약이며,
+운영 공개 전 Supabase 관리자 JWT dependency를 추가해야 한다.
+>>>>>>> Stashed changes
 
 ## 확장 예정 구조
 

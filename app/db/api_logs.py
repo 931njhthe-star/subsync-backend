@@ -74,6 +74,7 @@ class ApiLogRepository:
         self,
         *,
         since: datetime,
+        until: datetime | None = None,
         limit: int = 10_000,
     ) -> list[dict[str, object]]:
         """대시보드 집계에 필요한 기간 내 ``api_logs`` 행을 조회한다.
@@ -92,27 +93,46 @@ class ApiLogRepository:
         if not self.is_configured:
             return []
 
-        safe_limit = min(max(limit, 1), 10_000)
-        params = {
-            "select": (
-                "api_name,user_id,requested_at,response_time_ms,status_code,success"
-            ),
-            "requested_at": f"gte.{since.astimezone(timezone.utc).isoformat()}",
-            "order": "requested_at.desc",
-            "limit": str(safe_limit),
-        }
+        safe_limit = min(max(limit, 1), 50_000)
+        page_size = min(safe_limit, 1_000)
+        selected_columns = (
+            "id,api_name,user_id,requested_at,response_time_ms,status_code,success"
+        )
+        rows: list[dict[str, object]] = []
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.get(
-                f"{self._url}/rest/v1/api_logs",
-                headers={
-                    "apikey": self._secret_key,
-                    "Authorization": f"Bearer {self._secret_key}",
-                    "Content-Type": "application/json",
-                },
-                params=params,
-            )
-        response.raise_for_status()
-        rows = response.json()
-        if not isinstance(rows, list):
-            raise ValueError("Supabase api_logs 응답 형식이 올바르지 않습니다.")
-        return [row for row in rows if isinstance(row, dict)]
+            offset = 0
+            while len(rows) < safe_limit:
+                current_limit = min(page_size, safe_limit - len(rows))
+                params: list[tuple[str, str]] = [
+                    ("select", selected_columns),
+                    ("requested_at", f"gte.{since.astimezone(timezone.utc).isoformat()}"),
+                    ("order", "requested_at.desc"),
+                    ("limit", str(current_limit)),
+                    ("offset", str(offset)),
+                ]
+                if until is not None:
+                    params.append(
+                        (
+                            "requested_at",
+                            f"lt.{until.astimezone(timezone.utc).isoformat()}",
+                        )
+                    )
+                response = await client.get(
+                    f"{self._url}/rest/v1/api_logs",
+                    headers={
+                        "apikey": self._secret_key,
+                        "Authorization": f"Bearer {self._secret_key}",
+                        "Content-Type": "application/json",
+                    },
+                    params=params,
+                )
+                response.raise_for_status()
+                page = response.json()
+                if not isinstance(page, list):
+                    raise ValueError("Supabase api_logs 응답 형식이 올바르지 않습니다.")
+                valid_page = [row for row in page if isinstance(row, dict)]
+                rows.extend(valid_page)
+                if len(valid_page) < current_limit:
+                    break
+                offset += len(valid_page)
+        return rows[:safe_limit]
