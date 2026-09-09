@@ -1,0 +1,16 @@
+$kind: http-request
+description: 구버전 Extension의 실제 호출 경로입니다. 200과 비어 있지 않은 meanings 배열을 확인합니다.
+url: "{{base_url}}/api/v1/dict/hover?word=honest"
+method: GET
+queryParams:
+  word: honest
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Hover 호환 경로가 동작한다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.meanings).to.be.an('array').and.not.empty;
+      });
+    language: text/javascript
+order: 1000

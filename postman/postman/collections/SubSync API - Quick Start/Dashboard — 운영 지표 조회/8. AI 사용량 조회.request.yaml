@@ -10,12 +10,12 @@ scripts:
       pm.test('AI 사용량을 받는다', function () {
         pm.response.to.have.status(200);
         const body = pm.response.json();
-      pm.expect(body.summary).to.have.property('total_tokens');
-      pm.expect(body.summary).to.have.property('error_rate');
-      pm.expect(body.summary).to.have.property('p95_latency_ms');
-      pm.expect(body.providers).to.be.an('array');
-      pm.expect(body.daily_usage).to.be.an('array');
-      pm.expect(body.details).to.be.an('array');
+        pm.expect(body.summary).to.have.property('total_tokens');
+        pm.expect(body.summary).to.have.property('error_rate');
+        pm.expect(body.summary).to.have.property('p95_latency_ms');
+        pm.expect(body.providers).to.be.an('array');
+        pm.expect(body.daily_usage).to.be.an('array');
+        pm.expect(body.details).to.be.an('array');
       });
     language: text/javascript
 order: 2000

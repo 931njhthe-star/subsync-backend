@@ -1,0 +1,24 @@
+$kind: http-request
+description: 처음 저장하면 201, 같은 사용자가 apple을 다시 저장하면 200을 반환합니다.
+url: "{{base_url}}/api/v1/words"
+method: POST
+headers:
+  Content-Type: application/json
+  X-Dev-User-ID: "{{dev_user_id}}"
+body:
+  type: json
+  content: |-
+    {
+      "word": "Apple"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('저장 단어가 저장된다', function () {
+        pm.expect([200, 201]).to.include(pm.response.code);
+        const body = pm.response.json();
+        pm.expect(body.word).to.eql('Apple');
+        pm.collectionVariables.set('saved_word_id', body.id);
+      });
+    language: text/javascript
+order: 1000

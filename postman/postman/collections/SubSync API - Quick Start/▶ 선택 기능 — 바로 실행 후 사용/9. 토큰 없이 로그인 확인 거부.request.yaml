@@ -1,0 +1,12 @@
+$kind: http-request
+description: Authorization 헤더가 없으면 401이어야 합니다.
+url: "{{base_url}}/api/v1/auth/me"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('로그인이 필요하다', function () {
+        pm.response.to.have.status(401);
+      });
+    language: text/javascript
+order: 7000

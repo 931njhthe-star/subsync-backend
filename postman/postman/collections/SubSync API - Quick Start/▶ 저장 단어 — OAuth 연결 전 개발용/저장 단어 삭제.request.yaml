@@ -1,0 +1,14 @@
+$kind: http-request
+description: 저장 단어 ID를 기준으로 개발 사용자의 단어를 삭제합니다.
+url: "{{base_url}}/api/v1/words/{{saved_word_id}}"
+method: DELETE
+headers:
+  X-Dev-User-ID: "{{dev_user_id}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('저장 단어가 삭제된다', function () {
+        pm.response.to.have.status(204);
+      });
+    language: text/javascript
+order: 3000

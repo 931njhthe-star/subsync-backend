@@ -1,5 +1,5 @@
 $kind: http-request
-description: 4번 응답의 question_id를 proactive_question_id 변수에 넣은 뒤 실행합니다. reply는 자연스러운 피드백이고 proactive_feedback에는 선택적인 정답 근거가 포함됩니다.
+description: 4번 응답의 question_id를 proactive_question_id 변수에 넣어 명시적으로 답변 모드로 호출합니다. reply는 자연스러운 피드백이고 proactive_feedback에는 선택적인 정답 근거가 포함됩니다.
 url: "{{base_url}}/api/v1/tutor/ask"
 method: POST
 headers:

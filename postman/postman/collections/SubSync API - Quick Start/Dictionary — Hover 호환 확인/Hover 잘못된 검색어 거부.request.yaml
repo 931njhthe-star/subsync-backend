@@ -1,0 +1,14 @@
+$kind: http-request
+description: 검색어가 없으면 422로 거부합니다.
+url: "{{base_url}}/api/v1/dict/hover?word="
+method: GET
+queryParams:
+  word: ""
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('빈 검색어를 거부한다', function () {
+        pm.response.to.have.status(422);
+      });
+    language: text/javascript
+order: 2000

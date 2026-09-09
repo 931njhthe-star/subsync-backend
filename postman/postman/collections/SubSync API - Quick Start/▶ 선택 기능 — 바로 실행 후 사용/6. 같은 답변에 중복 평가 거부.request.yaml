@@ -19,4 +19,4 @@ scripts:
         pm.response.to.have.status(409);
       });
     language: text/javascript
-order: 5000
+order: 8000

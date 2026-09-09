@@ -1,0 +1,3 @@
+$kind: collection
+description: 배포된 Extension이 사용하는 `/dict/*` 경로와 잘못된 입력을 확인합니다.
+order: 3000

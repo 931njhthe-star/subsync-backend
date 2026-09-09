@@ -1,0 +1,15 @@
+$kind: http-request
+description: 현재 개발 사용자에게 저장된 단어를 최근 저장 순으로 조회합니다.
+url: "{{base_url}}/api/v1/words"
+method: GET
+headers:
+  X-Dev-User-ID: "{{dev_user_id}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('저장 단어 목록을 조회한다', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().items).to.be.an('array');
+      });
+    language: text/javascript
+order: 2000

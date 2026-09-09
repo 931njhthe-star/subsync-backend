@@ -12,4 +12,7 @@ variables:
   conversation_id: ""
   message_id: ""
   proactive_question_id: ""
+  access_token: ""
+  dev_user_id: 00000000-0000-0000-0000-000000000000
+  saved_word_id: ""
   dashboard_days: "7"

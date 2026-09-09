@@ -11,12 +11,12 @@ scripts:
       pm.test('API 호출 현황을 받는다', function () {
         pm.response.to.have.status(200);
         const body = pm.response.json();
-      pm.expect(body.summary).to.have.property('success_rate');
-      pm.expect(body.summary).to.have.property('p95_response_time_ms');
-      pm.expect(body.endpoints).to.be.an('array');
-      pm.expect(body.recent_calls).to.be.an('array');
-      pm.expect(body.all_calls).to.be.an('array');
-      pm.expect(body.status_codes).to.be.an('array');
+        pm.expect(body.summary).to.have.property('success_rate');
+        pm.expect(body.summary).to.have.property('p95_response_time_ms');
+        pm.expect(body.endpoints).to.be.an('array');
+        pm.expect(body.recent_calls).to.be.an('array');
+        pm.expect(body.all_calls).to.be.an('array');
+        pm.expect(body.status_codes).to.be.an('array');
       });
     language: text/javascript
 order: 3000

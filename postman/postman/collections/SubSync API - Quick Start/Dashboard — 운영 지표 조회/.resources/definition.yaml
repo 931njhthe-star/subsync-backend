@@ -1,3 +1,3 @@
 $kind: collection
-description: Streamlit Dashboard에서 사용할 llm_usage·api_logs 집계 API입니다. Supabase가 설정되지 않은 로컬 환경에서는 빈 집계가 반환됩니다.
-order: 3000
+description: 기존 Streamlit 화면을 유지하면서 FastAPI가 Supabase의 llm_usage·api_logs를 집계해 전달합니다. 날짜·사용자·모델·endpoint 필터와 상세 내역·상태 코드 집계를 제공합니다.
+order: 5000

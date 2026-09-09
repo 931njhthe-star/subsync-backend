@@ -1,0 +1,18 @@
+$kind: http-request
+description: 확장 프로그램 Google 로그인 후 복사한 Supabase Access Token으로 users와 login_history를 동기화합니다. access_token 변수를 채운 뒤 실행합니다.
+url: "{{base_url}}/api/v1/auth/me"
+method: GET
+headers:
+  Authorization: Bearer {{access_token}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('로그인 사용자를 받는다', function () {
+        pm.response.to.have.status(200);
+        const body = pm.response.json();
+        pm.expect(body.id).to.be.a('string').and.not.empty;
+        pm.expect(body).to.have.property('email');
+        pm.expect(body).to.have.property('google_account_id');
+      });
+    language: text/javascript
+order: 5000

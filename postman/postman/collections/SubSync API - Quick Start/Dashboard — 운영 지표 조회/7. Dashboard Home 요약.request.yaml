@@ -1,5 +1,5 @@
 $kind: http-request
-description: 기존 KPI·일별 AI 사용량·최근 API 활동과 최근 AI 활동·사용자 표시값을 함께 조회합니다. from_date/to_date를 쓰면 달력의 날짜 범위를 정확히 지정할 수 있습니다.
+description: 기존 KPI·일별 AI 사용량·최근 API 활동과 최근 AI 활동·사용자 표시값을 조회합니다. 정확한 날짜는 from_date/to_date를 함께 사용합니다.
 url: "{{base_url}}/api/v1/dashboard/overview?days={{dashboard_days}}&recent_limit=10"
 method: GET
 queryParams:
@@ -11,12 +11,12 @@ scripts:
       pm.test('Dashboard Home 요약을 받는다', function () {
         pm.response.to.have.status(200);
         const body = pm.response.json();
-      pm.expect(body).to.have.property('tracked_user_count');
-      pm.expect(body).to.have.property('registered_user_count');
-      pm.expect(body).to.have.property('daily_ai_usage');
-      pm.expect(body.recent_activity).to.be.an('array');
-      pm.expect(body.recent_ai_activity).to.be.an('array');
-      pm.expect(body.users).to.be.an('array');
+        pm.expect(body).to.have.property('tracked_user_count');
+        pm.expect(body).to.have.property('registered_user_count');
+        pm.expect(body).to.have.property('daily_ai_usage');
+        pm.expect(body.recent_activity).to.be.an('array');
+        pm.expect(body.recent_ai_activity).to.be.an('array');
+        pm.expect(body.users).to.be.an('array');
       });
     language: text/javascript
 order: 1000
